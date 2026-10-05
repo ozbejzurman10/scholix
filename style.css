@@ -425,3 +425,112 @@ a {
         grid-column: auto;
     }
 }
+
+/* Prijavljeni del aplikacije */
+.navbar { background: var(--blue-dark); color: #fff; }
+.nav-container { width: min(1200px, calc(100% - 32px)); margin: auto; min-height: 58px; display:flex; align-items:center; justify-content:space-between; gap:20px; }
+.logo,.navbar a { color:#fff; font-weight:700; }.navbar nav { display:flex; align-items:center; gap:15px; flex-wrap:wrap; }.user-name { font-size:13px; opacity:.9; }
+.container { width:min(1200px, calc(100% - 32px)); margin:28px auto 50px; }.container h1 { margin-top:0; }
+.admin-grid,.schedule-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }.panel { padding:20px; border:1px solid var(--border); background:#fff; border-radius:var(--radius); box-shadow:var(--shadow); }.panel.full { grid-column:1/-1; }
+.panel form { display:flex; flex-wrap:wrap; gap:9px; align-items:center; }.panel input,.panel select,.panel textarea { max-width:100%; min-height:37px; padding:8px; border:1px solid var(--border); border-radius:7px; font:inherit; }.panel textarea { width:100%; min-height:80px; }.panel label { display:grid; gap:5px; font-size:13px; font-weight:700; }
+.blue { color:#fff; background:var(--blue); }.red { color:#fff; background:#bd3644; }.small { min-width:auto; min-height:31px; padding:6px 10px; }.inline { display:inline-flex!important; }
+table { width:100%; margin-top:15px; border-collapse:collapse; font-size:13px; } th,td { padding:9px; text-align:left; vertical-align:middle; border-bottom:1px solid var(--border); } th { color:var(--muted); } td input,td select { width:100%; min-width:70px; }
+.list-row,.schedule-row { padding:10px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px; }.task { padding:16px 0; border-bottom:1px solid var(--border); }.task h3 { margin:0 0 8px; }.alert,.confirm-box,.error { margin:0 0 18px; padding:11px; border-radius:8px; background:#eaf8f0; color:#185c38; border:1px solid #c8ebd7; }.error { background:#fff0f1; color:#9a2630; border-color:#efc4c8; }.schedule-grid { grid-template-columns:repeat(5,minmax(180px,1fr)); overflow:auto; }
+@media(max-width:800px){.admin-grid{grid-template-columns:1fr;}.schedule-grid{grid-template-columns:1fr;}.panel.full{grid-column:auto}.nav-container{padding:10px 0;align-items:flex-start;}.navbar nav{gap:9px;}table{display:block;overflow-x:auto;}}
+
+/* Status badges */
+.badge-ok {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #eaf8f0;
+    color: #185c38;
+    border: 1px solid #c8ebd7;
+}
+.badge-warn {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    background: #fff8e6;
+    color: #8a6d00;
+    border: 1px solid #f0dfa0;
+}
+
+/* Confirm box improvements */
+.confirm-box {
+    background: #fff8e6;
+    color: #8a6d00;
+    border-color: #f0dfa0;
+}
+
+/* Details / Summary */
+details {
+    margin-top: 6px;
+}
+details summary {
+    cursor: pointer;
+    color: var(--blue);
+    font-weight: 600;
+    font-size: 13px;
+}
+details summary:hover {
+    text-decoration: underline;
+}
+details > form {
+    margin-top: 8px;
+}
+
+/* Center text helper */
+.center {
+    text-align: center;
+    margin-top: 18px;
+    font-size: 13px;
+    color: var(--muted);
+}
+.center a {
+    color: var(--blue);
+    font-weight: 700;
+}
+
+/* Navbar active page indicator */
+.navbar a:hover {
+    opacity: 0.85;
+}
+
+/* Panel heading */
+.panel h2 {
+    margin-top: 0;
+    margin-bottom: 14px;
+    font-size: 17px;
+}
+
+/* Form improvements for panel label + input */
+.panel label select,
+.panel label input,
+.panel label textarea {
+    width: 100%;
+}
+
+/* Module card color for logged-in link */
+.module-card {
+    color: var(--text);
+}
+
+/* Table row hover */
+table tr:hover td {
+    background: #f8fafd;
+}
+
+/* Responsive table text */
+@media(max-width: 600px) {
+    .navbar nav {
+        font-size: 13px;
+    }
+    .container h1 {
+        font-size: 22px;
+    }
+}
