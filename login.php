@@ -57,13 +57,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 <div class="auth-card">
 
-    <a href="index.php">
+    <a href="index.php" class="back-link">
         ← Nazaj
     </a>
 
     <h1>Prijava</h1>
 
-    <p>
+    <p class="auth-subtitle">
         Prijavite se v spletno učilnico.
     </p>
 
@@ -106,7 +106,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     </form>
 
 
-    <p class="center">
+    <p class="auth-footer">
 
         Še nimate računa?
 

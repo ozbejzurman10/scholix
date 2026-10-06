@@ -77,7 +77,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 <div class="auth-card auth-card-wide">
 
-    <a href="index.php">
+    <a href="index.php" class="back-link">
         ← Nazaj
     </a>
 
