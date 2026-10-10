@@ -22,9 +22,16 @@ html {
 body {
     margin: 0;
     min-height: 100vh;
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
     color: var(--text);
     background: var(--page);
+}
+
+button,
+input,
+select,
+textarea {
+    font-family: inherit;
 }
 
 a {
@@ -542,3 +549,5 @@ table tr:hover td {
 .auth-form label { display: grid; gap: 6px; }
 .auth-form .btn { width: 100%; margin-top: 16px; color: #fff; background: linear-gradient(100deg, #1e5da8, #2878d1); border: 0; border-radius: 8px; cursor: pointer; }
 .auth-card .center { color: var(--muted); text-align: center; font-size: 12px; }
+
+.schedule-table-wrap{overflow-x:auto;}.schedule-table{display:table;width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;}.schedule-table th,.schedule-table td{padding:10px 12px;border:1px solid var(--border);text-align:left;vertical-align:top;min-width:120px;}.schedule-table thead th{background:#eef2f8;}.schedule-table tbody th{width:70px;white-space:nowrap;}.schedule-cell+.schedule-cell{margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);}

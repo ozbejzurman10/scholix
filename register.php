@@ -4,6 +4,8 @@ require_once "functions.php";
 
 $error = "";
 
+$oddelki = $conn->query("SELECT * FROM Oddelek ORDER BY letnik, ime")->fetchAll();
+
 if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     $ime = trim($_POST["ime"]);
@@ -11,6 +13,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $email = trim($_POST["e_posta"]);
     $geslo = $_POST["geslo"];
     $ponovi = $_POST["ponovi_geslo"];
+    $oddelek = ($_POST["oddelek_id"] ?? "") !== "" ? (int) $_POST["oddelek_id"] : null;
 
 
     if ($ime === "" || $priimek === "" || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -36,15 +39,16 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             }
 
             $stmt = $conn->prepare("INSERT INTO Uporabnik
-                (ime, priimek, e_posta, geslo, vloga)
-                VALUES (?, ?, ?, ?, 'dijak')"
+                (ime, priimek, e_posta, geslo, vloga, oddelek_id)
+                VALUES (?, ?, ?, ?, 'dijak', ?)"
             );
 
             $stmt->execute([
                 $ime,
                 $priimek,
                 $email,
-                password_hash($geslo, PASSWORD_DEFAULT)
+                password_hash($geslo, PASSWORD_DEFAULT),
+                $oddelek
             ]);
 
             redirect("login.php");
@@ -115,6 +119,26 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 name="priimek"
                 required
             >
+
+        </label>
+
+
+        <label>
+            Oddelek
+
+            <select name="oddelek_id">
+
+                <option value="">Izberite oddelek</option>
+
+                <?php foreach ($oddelki as $o): ?>
+
+                    <option value="<?= $o["id_oddelek"] ?>">
+                        <?= e($o["ime"] . " - " . $o["program"]) ?>
+                    </option>
+
+                <?php endforeach; ?>
+
+            </select>
 
         </label>
 

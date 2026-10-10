@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 
 require_once "functions.php";
 
@@ -48,7 +48,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 (int) $_POST["ucitelj_id"],
                 $_POST["dan"],
                 (int) $_POST["ura"],
-                trim($_POST["ucilnica"])
+                trim($_POST["ucilnica"]),
+                ($_POST["oddelek_id"] ?? "") !== "" ? (int) $_POST["oddelek_id"] : null
             ];
 
             // Preverjanje dneva
@@ -57,7 +58,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             }
 
             // Preverjanje ure
-            if ($vrednosti[3] < 1 || $vrednosti[3] > 12) {
+            if ($vrednosti[3] < 0 || $vrednosti[3] > 12) {
                 throw new RuntimeException();
             }
 
@@ -72,9 +73,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                         ucitelj_id,
                         dan_v_tednu,
                         ura,
-                        ucilnica
+                        ucilnica,
+                        oddelek_id
                     )
-                    VALUES (?, ?, ?, ?, ?)"
+                    VALUES (?, ?, ?, ?, ?, ?)"
                 );
 
                 $stmt->execute($vrednosti);
@@ -91,7 +93,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                          ucitelj_id = ?,
                          dan_v_tednu = ?,
                          ura = ?,
-                         ucilnica = ?
+                         ucilnica = ?,
+                         oddelek_id = ?
                      WHERE id_urnik = ?"
                 );
 
@@ -123,7 +126,8 @@ $sql = "
         ur.*,
         p.naziv,
         u.ime,
-        u.priimek
+        u.priimek,
+        o.ime AS oddelek
 
     FROM Urnik ur
 
@@ -132,18 +136,26 @@ $sql = "
 
     JOIN Uporabnik u
         ON u.id_uporabnik = ur.ucitelj_id
+
+    LEFT JOIN Oddelek o
+        ON o.id_oddelek = ur.oddelek_id
 ";
 
+$where = [];
 $params = [];
+
+// Seznam oddelkov (za filter in obrazec)
+$oddelki = $conn->query(
+    "SELECT * FROM Oddelek ORDER BY letnik, ime"
+)->fetchAll();
+
+$izbranOddelek = (int) ($_GET["oddelek"] ?? 0);
 
 
 // UČITELJ
 if ($user["vloga"] === "ucitelj") {
 
-    $sql .= "
-        WHERE ur.ucitelj_id = ?
-    ";
-
+    $where[] = "ur.ucitelj_id = ?";
     $params[] = $user["id_uporabnik"];
 }
 
@@ -151,16 +163,35 @@ if ($user["vloga"] === "ucitelj") {
 // DIJAK
 elseif ($user["vloga"] === "dijak") {
 
-    $sql .= "
-        JOIN Dijak_Predmet dp
-            ON dp.predmet_id = ur.predmet_id
+    // Dijak z oddelkom vidi urnik svojega oddelka
+    if (!empty($user["oddelek_id"])) {
 
-        WHERE dp.dijak_id = ?
-    ";
+        $where[] = "ur.oddelek_id = ?";
+        $params[] = $user["oddelek_id"];
 
-    $params[] = $user["id_uporabnik"];
+    } else {
+
+        $sql .= "
+            JOIN Dijak_Predmet dp
+                ON dp.predmet_id = ur.predmet_id
+        ";
+
+        $where[] = "dp.dijak_id = ?";
+        $params[] = $user["id_uporabnik"];
+    }
 }
 
+
+// FILTER PO ODDELKU (admin, učitelj)
+if ($user["vloga"] !== "dijak" && $izbranOddelek > 0) {
+
+    $where[] = "ur.oddelek_id = ?";
+    $params[] = $izbranOddelek;
+}
+
+if ($where) {
+    $sql .= " WHERE " . implode(" AND ", $where);
+}
 
 // RAZVRŠČANJE PO DNEVU IN URI
 
@@ -278,7 +309,7 @@ function scheduleFields(
     <input
         type="number"
         name="ura"
-        min="1"
+        min="0"
         max="12"
         value="<?= e($entry["ura"]) ?>"
         required
@@ -291,6 +322,26 @@ function scheduleFields(
         placeholder="Učilnica"
         value="<?= e($entry["ucilnica"]) ?>"
     >
+
+
+    <select name="oddelek_id">
+
+        <option value="">Brez oddelka</option>
+
+        <?php foreach ($GLOBALS["oddelki"] as $o): ?>
+
+            <option
+                value="<?= $o["id_oddelek"] ?>"
+                <?= $o["id_oddelek"] == ($entry["oddelek_id"] ?? null)
+                    ? "selected"
+                    : "" ?>
+            >
+                <?= e($o["ime"]) ?>
+            </option>
+
+        <?php endforeach; ?>
+
+    </select>
 
     <?php
 }
@@ -305,6 +356,47 @@ pageStart("Urnik");
 ?>
 
 <h1>Urnik</h1>
+
+<?php if ($user["vloga"] === "dijak" && !empty($user["oddelek_id"])): ?>
+
+    <p>
+        Oddelek:
+        <strong>
+            <?php foreach ($oddelki as $o): ?>
+                <?= $o["id_oddelek"] == $user["oddelek_id"] ? e($o["ime"] . " (" . $o["program"] . ")") : "" ?>
+            <?php endforeach; ?>
+        </strong>
+    </p>
+
+<?php elseif ($user["vloga"] !== "dijak"): ?>
+
+    <form method="get" class="panel">
+
+        <label>
+            Oddelek:
+
+            <select name="oddelek" onchange="this.form.submit()">
+
+                <option value="0">Vsi oddelki</option>
+
+                <?php foreach ($oddelki as $o): ?>
+
+                    <option
+                        value="<?= $o["id_oddelek"] ?>"
+                        <?= $o["id_oddelek"] === $izbranOddelek ? "selected" : "" ?>
+                    >
+                        <?= e($o["ime"] . " - " . $o["program"]) ?>
+                    </option>
+
+                <?php endforeach; ?>
+
+            </select>
+
+        </label>
+
+    </form>
+
+<?php endif; ?>
 
 
 <?php if ($user["vloga"] === "admin"): ?>
@@ -332,7 +424,8 @@ pageStart("Urnik");
                     "ucitelj_id" => 0,
                     "dan_v_tednu" => "Ponedeljek",
                     "ura" => 1,
-                    "ucilnica" => ""
+                    "ucilnica" => "",
+                    "oddelek_id" => $izbranOddelek ?: null
                 ],
                 $predmeti,
                 $ucitelji,
@@ -355,155 +448,131 @@ pageStart("Urnik");
 
 <!-- URNIK -->
 
-<div class="schedule-grid">
+<?php
+$byCell = [];
+$maxUra = 0;
+$minUra = 99;
 
-    <?php foreach ($days as $day): ?>
+foreach ($entries as $entry) {
+    $byCell[(int)$entry["ura"]][$entry["dan_v_tednu"]][] = $entry;
+    $maxUra = max($maxUra, (int)$entry["ura"]);
+    $minUra = min($minUra, (int)$entry["ura"]);
+}
 
-        <section class="panel">
+if (!$entries) {
+    $minUra = 1;
+}
+?>
 
-            <h2>
-                <?= e($day) ?>
-            </h2>
+<div class="schedule-table-wrap">
+<table class="schedule-table">
 
-
-            <?php
-
-            $imaUre = false;
-
-            foreach ($entries as $entry):
-
-                if ($entry["dan_v_tednu"] !== $day) {
-                    continue;
-                }
-
-                $imaUre = true;
-
-            ?>
-
-                <div class="schedule-row">
-
-                    <strong>
-                        <?= e($entry["ura"]) ?>. ura
-                    </strong>
-
-
-                    <span>
-
-                        <?= e($entry["naziv"]) ?>
-
-                        <br>
-
-                        <small>
-
-                            <?= e(
-                                $entry["priimek"]
-                                . " "
-                                . $entry["ime"]
-                            ) ?>
-
-                            ·
-
-                            <?= e($entry["ucilnica"]) ?>
-
-                        </small>
-
-                    </span>
-
-
-                    <?php if ($user["vloga"] === "admin"): ?>
-
-                        <details>
-
-                            <summary>
-                                Uredi
-                            </summary>
-
-
-                            <!-- UREDI -->
-
-                            <form method="post">
-
-                                <input
-                                    type="hidden"
-                                    name="action"
-                                    value="uredi"
-                                >
-
-                                <input
-                                    type="hidden"
-                                    name="id"
-                                    value="<?= $entry["id_urnik"] ?>"
-                                >
-
-
-                                <?php
-
-                                scheduleFields(
-                                    $entry,
-                                    $predmeti,
-                                    $ucitelji,
-                                    $days
-                                );
-
-                                ?>
-
-
-                                <button class="btn small">
-                                    Shrani
-                                </button>
-
-                            </form>
-
-
-                            <!-- IZBRIŠI -->
-
-                            <form method="post">
-
-                                <input
-                                    type="hidden"
-                                    name="action"
-                                    value="izbrisi"
-                                >
-
-                                <input
-                                    type="hidden"
-                                    name="id"
-                                    value="<?= $entry["id_urnik"] ?>"
-                                >
-
-
-                                <button
-                                    class="btn red small"
-                                    onclick="return confirm(
-                                        'Izbrišem uro?'
-                                    )"
-                                >
-                                    Izbriši
-                                </button>
-
-                            </form>
-
-                        </details>
-
-                    <?php endif; ?>
-
-                </div>
-
+    <thead>
+        <tr>
+            <th>Ura</th>
+            <?php foreach ($days as $day): ?>
+                <th><?= e($day) ?></th>
             <?php endforeach; ?>
+        </tr>
+    </thead>
 
+    <tbody>
 
-            <?php if (!$imaUre): ?>
+    <?php if (!$entries): ?>
 
-                <p>
-                    Ta dan ni vnešenih ur.
-                </p>
+        <tr>
+            <td colspan="<?= count($days) + 1 ?>">Ni vnešenih ur.</td>
+        </tr>
 
-            <?php endif; ?>
+    <?php else: ?>
 
-        </section>
+        <?php for ($ura = $minUra; $ura <= $maxUra; $ura++): ?>
 
-    <?php endforeach; ?>
+            <tr>
+                <th><?= $ura ?>. ura</th>
 
+                <?php foreach ($days as $day): ?>
+
+                    <td>
+
+                    <?php foreach ($byCell[$ura][$day] ?? [] as $entry): ?>
+
+                        <div class="schedule-cell">
+
+                            <strong><?= e($entry["naziv"]) ?></strong>
+
+                            <br>
+
+                            <small>
+                                <?= e($entry["priimek"] . " " . $entry["ime"]) ?>
+                                ·
+                                <?= e($entry["ucilnica"]) ?>
+                            </small>
+
+                            <?php if ($user["vloga"] !== "dijak" && $entry["oddelek"]): ?>
+                                <br>
+                                <small class="muted">
+                                    <?= e($entry["oddelek"]) ?>
+                                </small>
+                            <?php endif; ?>
+
+                            <?php if ($user["vloga"] === "admin"): ?>
+
+                                <details>
+
+                                    <summary>Uredi</summary>
+
+                                    <form method="post">
+
+                                        <input type="hidden" name="action" value="uredi">
+                                        <input type="hidden" name="id" value="<?= $entry["id_urnik"] ?>">
+
+                                        <?php
+                                        scheduleFields(
+                                            $entry,
+                                            $predmeti,
+                                            $ucitelji,
+                                            $days
+                                        );
+                                        ?>
+
+                                        <button class="btn small">Shrani</button>
+
+                                    </form>
+
+                                    <form method="post">
+
+                                        <input type="hidden" name="action" value="izbrisi">
+                                        <input type="hidden" name="id" value="<?= $entry["id_urnik"] ?>">
+
+                                        <button
+                                            class="btn red small"
+                                            onclick="return confirm('Izbrišem uro?')"
+                                        >
+                                            Izbriši
+                                        </button>
+
+                                    </form>
+
+                                </details>
+
+                            <?php endif; ?>
+
+                        </div>
+
+                    <?php endforeach; ?>
+
+                    </td>
+
+                <?php endforeach; ?>
+            </tr>
+
+        <?php endfor; ?>
+
+    <?php endif; ?>
+
+    </tbody>
+</table>
 </div>
 
 

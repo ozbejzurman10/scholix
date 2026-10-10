@@ -1,3 +1,10 @@
+CREATE TABLE Oddelek (
+    id_oddelek INT AUTO_INCREMENT PRIMARY KEY,
+    ime VARCHAR(20) NOT NULL UNIQUE,
+    letnik INT NOT NULL,
+    program VARCHAR(100) NOT NULL
+);
+
 CREATE TABLE Uporabnik (
     id_uporabnik INT AUTO_INCREMENT PRIMARY KEY,
     ime VARCHAR(50) NOT NULL,
@@ -5,7 +12,9 @@ CREATE TABLE Uporabnik (
     e_posta VARCHAR(100) NOT NULL UNIQUE,
     geslo VARCHAR(255) NOT NULL,
     vloga VARCHAR(20) NOT NULL,
+    oddelek_id INT NULL,
     ustvarjeno DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (oddelek_id) REFERENCES Oddelek(id_oddelek),
     CHECK (vloga IN ('admin', 'ucitelj', 'dijak'))
 );
 
@@ -101,7 +110,9 @@ CREATE TABLE Urnik (
     dan_v_tednu VARCHAR(20) NOT NULL,
     ura INT NOT NULL,
     ucilnica VARCHAR(50),
+    oddelek_id INT NULL,
     FOREIGN KEY (predmet_id) REFERENCES Predmet(id_predmet),
     FOREIGN KEY (ucitelj_id) REFERENCES Uporabnik(id_uporabnik),
+    FOREIGN KEY (oddelek_id) REFERENCES Oddelek(id_oddelek),
     CHECK (dan_v_tednu IN ('Ponedeljek', 'Torek', 'Sreda', 'Četrtek', 'Petek'))
 );
