@@ -72,13 +72,16 @@ function uploadIsValid($file)
         && $file["error"] === UPLOAD_ERR_OK
         && is_uploaded_file($file["tmp_name"])
         && $file["size"] > 0
-        && $file["size"] <= 10 * 1024 * 1024;
+        && $file["size"] <= 40 * 1024 * 1024;
 }
 
 function ensureUploadDirectory($directory)
 {
     $path = __DIR__ . "/" . $directory;
-    if (!is_dir($path) && !mkdir($path, 0755, true) && !is_dir($path)) {
+    if (file_exists($path) && !is_dir($path)) {
+        @unlink($path);
+    }
+    if (!is_dir($path) && !@mkdir($path, 0777, true) && !is_dir($path)) {
         throw new RuntimeException("Mape za nalaganje ni mogoče ustvariti.");
     }
 
@@ -124,7 +127,7 @@ function pageStart($title)
 
         <title><?= e($title) ?> - Scholix</title>
 
-        <link rel="stylesheet" href="style.css">
+        <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . "/style.css") ?>">
 
     </head>
 
@@ -140,64 +143,30 @@ function pageStart($title)
 
             <nav>
 
-                <a href="dashboard.php">
-                    Nadzorna plošča
+                <?php
+                $domovLabel = "Nadzorna plošča";
+                if ($user && $user["vloga"] === "ucitelj") {
+                    $domovLabel = "Učiteljski modul";
+                } elseif ($user && $user["vloga"] === "dijak") {
+                    $domovLabel = "Moja učilnica";
+                }
+                ?>
+
+                <a href="dashboard.php" class="nav-link">
+                    <?= e($domovLabel) ?>
                 </a>
 
-
-                <?php if ($user && $user["vloga"] === "admin"): ?>
-
-                    <a href="admin.php">
-                        Administrator
-                    </a>
-
-                    <a href="urnik.php">Urnik</a>
-                    <a href="ocene.php">Ocene</a>
-                    <a href="izostanki.php">Izostanki</a>
-
-                <?php endif; ?>
-
-
-                <?php if ($user && $user["vloga"] === "ucitelj"): ?>
-
-                    <a href="teacher.php">
-                        Učitelj
-                    </a>
-
-                    <a href="urnik.php">Urnik</a>
-                    <a href="ocene.php">Ocene</a>
-                    <a href="izostanki.php">Izostanki</a>
-
-                <?php endif; ?>
-
-
-                <?php if ($user && $user["vloga"] === "dijak"): ?>
-
-                    <a href="student.php">
-                        Dijak
-                    </a>
-
-                    <a href="urnik.php">Urnik</a>
-                    <a href="ocene.php">Ocene</a>
-                    <a href="izostanki.php">Izostanki</a>
-
-                    <a href="profile.php">
-                        Profil
-                    </a>
-
-                <?php endif; ?>
-
+                <a href="urnik.php" class="nav-link">Urnik</a>
+                <a href="ocene.php" class="nav-link">Ocene</a>
+                <a href="izostanki.php" class="nav-link">Izostanki</a>
 
                 <?php if ($user): ?>
 
-                    <span class="user-name">
+                    <a href="profile.php" class="user-name" title="Nastavitve profila">
+                        <?= e($user["ime"]) ?> <?= e($user["priimek"]) ?>
+                    </a>
 
-                        <?= e($user["ime"]) ?>
-                        <?= e($user["priimek"]) ?>
-
-                    </span>
-
-                    <a href="logout.php">
+                    <a href="logout.php" class="btn-logout">
                         Odjava
                     </a>
 

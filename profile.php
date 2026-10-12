@@ -83,6 +83,41 @@ pageStart("Moj profil");
 
 ?>
 
+<?php
+$vlogeImena = ["admin" => "Administrator", "ucitelj" => "Učitelj", "dijak" => "Dijak"];
+$vlogaLabel = $vlogeImena[$user["vloga"]] ?? $user["vloga"];
+
+$oddelekIme = "";
+$razrednikIme = "";
+if (!empty($user["oddelek_id"])) {
+    $stmtOdd = $conn->prepare("
+        SELECT o.ime AS oddelek_ime, r.ime AS razrednik_ime, r.priimek AS razrednik_priimek
+        FROM Oddelek o
+        LEFT JOIN Uporabnik r ON r.id_uporabnik = o.razrednik_id
+        WHERE o.id_oddelek = ?
+    ");
+    $stmtOdd->execute([$user["oddelek_id"]]);
+    $oddRow = $stmtOdd->fetch();
+    if ($oddRow) {
+        $oddelekIme = (string) $oddRow["oddelek_ime"];
+        if (!empty($oddRow["razrednik_ime"])) {
+            $razrednikIme = trim($oddRow["razrednik_priimek"] . " " . $oddRow["razrednik_ime"]);
+        }
+    }
+}
+
+$uciteljRazrednistva = [];
+if ($user["vloga"] === "ucitelj") {
+    $stmtUr = $conn->prepare("SELECT ime FROM Oddelek WHERE razrednik_id = ? ORDER BY letnik, ime");
+    $stmtUr->execute([$user["id_uporabnik"]]);
+    $uciteljRazrednistva = $stmtUr->fetchAll(PDO::FETCH_COLUMN);
+}
+
+$inicialke = mb_strtoupper(mb_substr($user["ime"], 0, 1) . mb_substr($user["priimek"], 0, 1));
+?>
+
+<div class="profile-page">
+
 <h1>Moj profil</h1>
 
 <?php if ($error): ?>
@@ -91,81 +126,112 @@ pageStart("Moj profil");
 </div>
 <?php endif; ?>
 
-<div class="panel">
+<div class="profile-header">
+    <div class="profile-avatar"><?= e($inicialke) ?></div>
+    <div class="profile-header-text">
+        <h2><?= e($user["ime"] . " " . $user["priimek"]) ?></h2>
+        <div class="profile-meta">
+            <span class="profile-badge"><?= e($vlogaLabel) ?></span>
+            <?php if ($oddelekIme !== ""): ?>
+                <span class="profile-badge profile-badge-light">Razred <?= e($oddelekIme) ?></span>
+            <?php endif; ?>
+            <?php if ($razrednikIme !== ""): ?>
+                <span class="profile-badge profile-badge-light">Razrednik: <?= e($razrednikIme) ?></span>
+            <?php endif; ?>
+            <?php if (!empty($uciteljRazrednistva)): ?>
+                <span class="profile-badge profile-badge-light" style="background: #dcfce7; color: #15803d; border-color: #86efac;">
+                    Razrednik: <?= e(implode(", ", $uciteljRazrednistva)) ?>
+                </span>
+            <?php endif; ?>
+            <span class="profile-email"><?= e($user["e_posta"]) ?></span>
+        </div>
+    </div>
+</div>
 
-<form method="POST">
+<form method="POST" class="profile-form">
 
-    <label>
-        Ime
+    <section class="profile-section">
+        <h3>Osebni podatki</h3>
+        <p class="profile-hint">Te podatke vidijo učitelji in administratorji.</p>
 
-        <input
-            type="text"
-            name="ime"
-            value="<?= e($user["ime"]) ?>"
-            required
-        >
+        <div class="profile-grid">
 
-    </label>
+            <label>
+                Ime
+                <input
+                    type="text"
+                    name="ime"
+                    value="<?= e($user["ime"]) ?>"
+                    required
+                >
+            </label>
 
+            <label>
+                Priimek
+                <input
+                    type="text"
+                    name="priimek"
+                    value="<?= e($user["priimek"]) ?>"
+                    required
+                >
+            </label>
 
-    <label>
-        Priimek
+            <label class="profile-wide">
+                E-pošta
+                <input
+                    type="email"
+                    name="e_posta"
+                    value="<?= e($user["e_posta"]) ?>"
+                    required
+                >
+            </label>
 
-        <input
-            type="text"
-            name="priimek"
-            value="<?= e($user["priimek"]) ?>"
-            required
-        >
-
-    </label>
-
-
-    <label>
-        E-pošta
-
-        <input
-            type="email"
-            name="e_posta"
-            value="<?= e($user["e_posta"]) ?>"
-            required
-        >
-
-    </label>
-
-
-    <label>
-        Staro geslo
-
-        <input
-            type="password"
-            name="staro_geslo"
-            placeholder="Potrebno samo ob menjavi gesla"
-        >
-
-    </label>
-
-
-    <label>
-        Novo geslo
-
-        <input
-            type="password"
-            name="geslo"
-            placeholder="Pusti prazno, če ga ne želiš spremeniti"
-        >
-
-    </label>
-
-    <label>
-        Ponovi novo geslo
-        <input type="password" name="ponovi_geslo">
-    </label>
+        </div>
+    </section>
 
 
-    <button class="btn blue">
-        Shrani spremembe
-    </button>
+    <section class="profile-section">
+        <h3>Sprememba gesla</h3>
+        <p class="profile-hint">Polja pusti prazna, če gesla ne želiš spremeniti. Novo geslo mora imeti vsaj 6 znakov.</p>
+
+        <div class="profile-grid">
+
+            <label class="profile-wide">
+                Trenutno geslo
+                <input
+                    type="password"
+                    name="staro_geslo"
+                    autocomplete="current-password"
+                >
+            </label>
+
+            <label>
+                Novo geslo
+                <input
+                    type="password"
+                    name="geslo"
+                    autocomplete="new-password"
+                >
+            </label>
+
+            <label>
+                Ponovi novo geslo
+                <input
+                    type="password"
+                    name="ponovi_geslo"
+                    autocomplete="new-password"
+                >
+            </label>
+
+        </div>
+    </section>
+
+
+    <div class="profile-actions">
+        <button class="btn blue">
+            Shrani spremembe
+        </button>
+    </div>
 
 </form>
 

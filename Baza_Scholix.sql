@@ -2,7 +2,8 @@ CREATE TABLE Oddelek (
     id_oddelek INT AUTO_INCREMENT PRIMARY KEY,
     ime VARCHAR(20) NOT NULL UNIQUE,
     letnik INT NOT NULL,
-    program VARCHAR(100) NOT NULL
+    program VARCHAR(100) NOT NULL,
+    razrednik_id INT NULL
 );
 
 CREATE TABLE Uporabnik (
@@ -50,6 +51,14 @@ CREATE TABLE Gradivo (
     ustvarjeno DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (predmet_id) REFERENCES Predmet(id_predmet),
     FOREIGN KEY (ucitelj_id) REFERENCES Uporabnik(id_uporabnik)
+);
+
+CREATE TABLE Gradivo_Oddelek (
+    gradivo_id INT NOT NULL,
+    oddelek_id INT NOT NULL,
+    PRIMARY KEY (gradivo_id, oddelek_id),
+    FOREIGN KEY (gradivo_id) REFERENCES Gradivo(id_gradivo) ON DELETE CASCADE,
+    FOREIGN KEY (oddelek_id) REFERENCES Oddelek(id_oddelek) ON DELETE CASCADE
 );
 
 CREATE TABLE Naloga (
@@ -115,4 +124,34 @@ CREATE TABLE Urnik (
     FOREIGN KEY (ucitelj_id) REFERENCES Uporabnik(id_uporabnik),
     FOREIGN KEY (oddelek_id) REFERENCES Oddelek(id_oddelek),
     CHECK (dan_v_tednu IN ('Ponedeljek', 'Torek', 'Sreda', 'Četrtek', 'Petek'))
+);
+
+CREATE TABLE Dan_Brez_Pouka (
+    id_dan INT AUTO_INCREMENT PRIMARY KEY,
+    datum DATE NOT NULL,
+    razlog VARCHAR(150) NOT NULL,
+    oddelek_id INT NULL,
+    ustvarjeno DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_dan_datum (datum),
+    FOREIGN KEY (oddelek_id) REFERENCES Oddelek(id_oddelek) ON DELETE CASCADE
+);
+
+CREATE TABLE Sprememba_Urnika (
+    id_sprememba INT AUTO_INCREMENT PRIMARY KEY,
+    datum DATE NOT NULL,
+    tip ENUM('odpade', 'dodatna') NOT NULL,
+    vrsta VARCHAR(20) DEFAULT 'dodatna',
+    urnik_id INT NULL,
+    oddelek_id INT NULL,
+    ura INT NULL,
+    predmet_id INT NULL,
+    ucitelj_id INT NULL,
+    ucilnica VARCHAR(50) NULL,
+    opomba VARCHAR(200) NULL,
+    ustvarjeno DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_sprememba_datum (datum),
+    FOREIGN KEY (urnik_id) REFERENCES Urnik(id_urnik) ON DELETE CASCADE,
+    FOREIGN KEY (oddelek_id) REFERENCES Oddelek(id_oddelek) ON DELETE CASCADE,
+    FOREIGN KEY (predmet_id) REFERENCES Predmet(id_predmet) ON DELETE CASCADE,
+    FOREIGN KEY (ucitelj_id) REFERENCES Uporabnik(id_uporabnik) ON DELETE CASCADE
 );

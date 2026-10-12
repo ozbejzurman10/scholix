@@ -12,54 +12,26 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $action = $_POST["action"] ?? "";
 
 
-    // DODAJ PREDMET
-
+    // DOLOČANJE IN POPRAVLJANJE PREDMETOV (ZAHTEVA 4. POGLAVJA)
     if ($action === "dodaj_predmet") {
-
-        try {
-
-            $stmt = $conn->prepare(
-                "INSERT INTO Dijak_Predmet
-                (dijak_id, predmet_id)
-                VALUES (?, ?)"
-            );
-
-            $stmt->execute([
-                $user["id_uporabnik"],
-                $_POST["predmet_id"]
-            ]);
-
-            flash("Predmet je bil dodan.");
-
-        } catch (PDOException $e) {
-
-            flash("Ta predmet je že na tvojem seznamu.");
+        $predmetId = (int) ($_POST["predmet_id"] ?? 0);
+        if ($predmetId > 0) {
+            $stmt = $conn->prepare("INSERT IGNORE INTO Dijak_Predmet (dijak_id, predmet_id) VALUES (?, ?)");
+            $stmt->execute([$user["id_uporabnik"], $predmetId]);
+            flash("Predmet je bil dodan na vaš seznam.");
         }
-
         redirect("student.php");
     }
-
-
-    // ODSTRANI PREDMET
 
     if ($action === "odstrani_predmet") {
-
-        $stmt = $conn->prepare(
-            "DELETE FROM Dijak_Predmet
-             WHERE dijak_id = ?
-             AND predmet_id = ?"
-        );
-
-        $stmt->execute([
-            $user["id_uporabnik"],
-            $_POST["predmet_id"]
-        ]);
-
-        flash("Predmet je bil odstranjen.");
-
+        $predmetId = (int) ($_POST["predmet_id"] ?? 0);
+        if ($predmetId > 0) {
+            $stmt = $conn->prepare("DELETE FROM Dijak_Predmet WHERE dijak_id = ? AND predmet_id = ?");
+            $stmt->execute([$user["id_uporabnik"], $predmetId]);
+            flash("Predmet je bil odstranjen z vašega seznama.");
+        }
         redirect("student.php");
     }
-
 
     // ODDAJA NALOGE – korak 1: začasno shranjevanje
     if ($action === "oddaj_nalogo") {
@@ -90,7 +62,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 
         if (!uploadIsValid($_FILES["datoteka"] ?? [])) {
-            flash("Datoteka ni veljavna ali je večja od 10 MB.");
+            flash("Datoteka ni veljavna ali je večja od 40 MB.");
             redirect("student.php");
         }
 
@@ -333,13 +305,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 
 // ==============================
-// PREDMETI
+// PREDMETI DIJAKA
 // ==============================
-
-$predmeti = $conn->query(
-    "SELECT * FROM Predmet
-     ORDER BY naziv"
-)->fetchAll();
 
 
 $stmt = $conn->prepare(
@@ -356,16 +323,21 @@ $stmt->execute([
 ]);
 
 $mojiPredmeti = $stmt->fetchAll();
+$mojiPredmetiIds = array_map('intval', array_column($mojiPredmeti, "id_predmet"));
+$vsiPredmeti = $conn->query("SELECT * FROM Predmet ORDER BY naziv")->fetchAll();
 
 
 // ==============================
 // GRADIVA
 // ==============================
 
+$studentOddelekId = (int) ($user["oddelek_id"] ?? 0);
+
 $stmt = $conn->prepare(
     "SELECT
         g.*,
-        p.naziv AS predmet
+        p.naziv AS predmet,
+        GROUP_CONCAT(o.ime ORDER BY o.ime SEPARATOR ', ') AS oddelki_imena
 
      FROM Gradivo g
 
@@ -375,13 +347,29 @@ $stmt = $conn->prepare(
      JOIN Dijak_Predmet dp
        ON dp.predmet_id = p.id_predmet
 
-     WHERE dp.dijak_id = ?
+     LEFT JOIN Gradivo_Oddelek go
+       ON go.gradivo_id = g.id_gradivo
 
+     LEFT JOIN Oddelek o
+       ON o.id_oddelek = go.oddelek_id
+
+     WHERE dp.dijak_id = ?
+       AND (
+           NOT EXISTS (SELECT 1 FROM Gradivo_Oddelek go1 WHERE go1.gradivo_id = g.id_gradivo)
+           OR EXISTS (
+               SELECT 1 FROM Gradivo_Oddelek go2
+               WHERE go2.gradivo_id = g.id_gradivo
+                 AND go2.oddelek_id = ?
+           )
+       )
+
+     GROUP BY g.id_gradivo
      ORDER BY g.ustvarjeno DESC"
 );
 
 $stmt->execute([
-    $user["id_uporabnik"]
+    $user["id_uporabnik"],
+    $studentOddelekId
 ]);
 
 $gradiva = $stmt->fetchAll();
@@ -477,71 +465,56 @@ if ($potrditev):
 <section class="panel">
 
 <h2>Moji predmeti</h2>
+<p style="font-size: 13px; color: var(--muted); margin-top: -6px; margin-bottom: 14px;">
+    Tukaj lahko določate in urejate seznam predmetov, ki jih obiskujete.
+</p>
 
+<?php if (empty($mojiPredmeti)): ?>
 
-<form method="POST">
+    <p style="color: var(--muted);">Trenutno nimate izbranega nobenega predmeta. Izberite predmete spodaj.</p>
 
-<input type="hidden"
-       name="action"
-       value="dodaj_predmet">
+<?php else: ?>
 
+    <?php foreach ($mojiPredmeti as $p): ?>
 
-<select name="predmet_id" required>
+    <div class="list-row" style="display: flex; justify-content: space-between; align-items: center;">
 
-<option value="">
-Izberi predmet
-</option>
+        <div>
+            <strong><?= e($p["naziv"]) ?></strong>
+            <?php if (!empty($p["opis"])): ?>
+                <br><small class="muted"><?= e($p["opis"]) ?></small>
+            <?php endif; ?>
+        </div>
 
-<?php foreach ($predmeti as $p): ?>
+        <form method="POST" style="margin: 0;">
+            <input type="hidden" name="action" value="odstrani_predmet">
+            <input type="hidden" name="predmet_id" value="<?= (int)$p["id_predmet"] ?>">
+            <button class="btn red small" onclick="return confirm('Ali res želite odstraniti ta predmet s svojega seznama?')" style="padding: 4px 8px; font-size: 11px;">
+                Odstrani
+            </button>
+        </form>
 
-<option value="<?= $p["id_predmet"] ?>">
+    </div>
 
-<?= e($p["naziv"]) ?>
+    <?php endforeach; ?>
 
-</option>
+<?php endif; ?>
 
-<?php endforeach; ?>
+<!-- OBRAZEC ZA DODAJANJE PREDMETA -->
+<form method="POST" style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+    <input type="hidden" name="action" value="dodaj_predmet">
 
-</select>
+    <select name="predmet_id" required style="flex: 1; min-width: 200px; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border);">
+        <option value="">-- Izberite predmet za vpis --</option>
+        <?php foreach ($vsiPredmeti as $vp): ?>
+            <?php if (!in_array((int)$vp["id_predmet"], $mojiPredmetiIds, true)): ?>
+                <option value="<?= (int)$vp["id_predmet"] ?>"><?= e($vp["naziv"]) ?></option>
+            <?php endif; ?>
+        <?php endforeach; ?>
+    </select>
 
-
-<button class="btn blue">
-Dodaj predmet
-</button>
-
+    <button class="btn blue small" style="white-space: nowrap;">+ Dodaj predmet</button>
 </form>
-
-
-<?php foreach ($mojiPredmeti as $p): ?>
-
-<div class="list-row">
-
-<strong>
-<?= e($p["naziv"]) ?>
-</strong>
-
-
-<form method="POST">
-
-<input type="hidden"
-       name="action"
-       value="odstrani_predmet">
-
-<input type="hidden"
-       name="predmet_id"
-       value="<?= $p["id_predmet"] ?>">
-
-
-<button class="btn red small"
-        onclick="return confirm('Ali res želiš odstraniti predmet?')">
-Odstrani
-</button>
-
-</form>
-
-</div>
-
-<?php endforeach; ?>
 
 </section>
 
@@ -563,9 +536,12 @@ Odstrani
 <?= e($g["naslov"]) ?>
 </strong>
 
-<small>
-<?= e($g["predmet"]) ?>
-</small>
+<div style="font-size: 12px; color: var(--muted); margin-top: 2px;">
+    <span><?= e($g["predmet"]) ?></span>
+    <?php if (!empty($g["oddelki_imena"])): ?>
+        &bull; <span>Razred: <?= e($g["oddelki_imena"]) ?></span>
+    <?php endif; ?>
+</div>
 
 <p>
 <?= e($g["opis"]) ?>

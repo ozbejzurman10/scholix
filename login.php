@@ -2,8 +2,13 @@
 
 require_once "functions.php";
 
+// Strani, na katere lahko začetna stran preusmeri po prijavi
+$dovoljeneStrani = ["dashboard.php", "urnik.php", "ocene.php", "izostanki.php", "profile.php"];
+$next = $_GET["next"] ?? "";
+$cilj = in_array($next, $dovoljeneStrani, true) ? $next : "dashboard.php";
+
 if (isset($_SESSION["user_id"])) {
-    redirect("dashboard.php");
+    redirect($cilj);
 }
 
 $error = "";
@@ -28,7 +33,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         $_SESSION["user_id"] = $user["id_uporabnik"];
         $_SESSION["role"] = $user["vloga"];
 
-        redirect("dashboard.php");
+        redirect($cilj);
 
     } else {
 
@@ -49,7 +54,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     <title>Prijava - Scholix</title>
 
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . "/style.css") ?>">
 
 </head>
 
@@ -107,13 +112,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 
     <p class="auth-footer">
-
-        Še nimate računa?
-
-        <a href="register.php">
-            Registracija dijaka
-        </a>
-
+        Še nimate računa? <a href="register.php" style="color: var(--blue); font-weight: 700;">Registrirajte se kot dijak</a>.
     </p>
 
 </div>
