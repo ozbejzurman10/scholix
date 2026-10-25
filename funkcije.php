@@ -4,7 +4,7 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-require_once "db.php";
+require_once "baza.php";
 
 
 function e($text)
@@ -23,7 +23,7 @@ function redirect($page)
 function requireLogin()
 {
     if (!isset($_SESSION["user_id"])) {
-        redirect("login.php");
+        redirect("prijava.php");
     }
 }
 
@@ -33,7 +33,7 @@ function requireRole($role)
     requireLogin();
 
     if (($_SESSION["role"] ?? "") !== $role) {
-        redirect("dashboard.php");
+        redirect("nadzorna_plosca.php");
     }
 }
 
@@ -110,6 +110,22 @@ function showFlash()
 }
 
 
+function isTeacherRazrednik($userId)
+{
+    global $conn;
+    if (!$userId) {
+        return false;
+    }
+    static $cache = [];
+    if (!array_key_exists($userId, $cache)) {
+        $st = $conn->prepare("SELECT 1 FROM Oddelek WHERE razrednik_id = ? LIMIT 1");
+        $st->execute([$userId]);
+        $cache[$userId] = (bool) $st->fetchColumn();
+    }
+    return $cache[$userId];
+}
+
+
 function pageStart($title)
 {
     $user = getUser();
@@ -127,7 +143,7 @@ function pageStart($title)
 
         <title><?= e($title) ?> - Scholix</title>
 
-        <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . "/style.css") ?>">
+        <link rel="stylesheet" href="stil.css?v=<?= filemtime(__DIR__ . "/stil.css") ?>">
 
     </head>
 
@@ -137,14 +153,16 @@ function pageStart($title)
 
         <div class="nav-container">
 
-            <a href="dashboard.php" class="logo">
+            <span class="logo">
                 Scholix
-            </a>
+            </span>
 
             <nav>
 
                 <?php
                 $domovLabel = "Nadzorna plošča";
+                $currentScript = basename($_SERVER["SCRIPT_NAME"] ?? "");
+                $isHomeActive = in_array($currentScript, ["nadzorna_plosca.php", "dijak.php", "ucitelj.php", "administrator.php"], true);
                 if ($user && $user["vloga"] === "ucitelj") {
                     $domovLabel = "Učiteljski modul";
                 } elseif ($user && $user["vloga"] === "dijak") {
@@ -152,21 +170,37 @@ function pageStart($title)
                 }
                 ?>
 
-                <a href="dashboard.php" class="nav-link">
+                <a href="nadzorna_plosca.php" class="nav-link <?= $isHomeActive ? "active" : "" ?>">
                     <?= e($domovLabel) ?>
                 </a>
 
-                <a href="urnik.php" class="nav-link">Urnik</a>
-                <a href="ocene.php" class="nav-link">Ocene</a>
-                <a href="izostanki.php" class="nav-link">Izostanki</a>
+                <?php if ($user && $user["vloga"] === "dijak"): ?>
+                    <a href="naloge.php" class="nav-link <?= $currentScript === "naloge.php" ? "active" : "" ?>">
+                        Naloge
+                    </a>
+                <?php endif; ?>
+
+                <a href="urnik.php" class="nav-link <?= $currentScript === "urnik.php" ? "active" : "" ?>">Urnik</a>
+                <a href="govorilne.php" class="nav-link <?= $currentScript === "govorilne.php" ? "active" : "" ?>">Govorilne ure</a>
+                <a href="ocene.php" class="nav-link <?= $currentScript === "ocene.php" ? "active" : "" ?>">Ocene</a>
+
+                <?php
+                $lahkoVidiIzostanke = true;
+                if ($user && $user["vloga"] === "ucitelj") {
+                    $lahkoVidiIzostanke = isTeacherRazrednik($user["id_uporabnik"]);
+                }
+                ?>
+                <?php if ($lahkoVidiIzostanke): ?>
+                    <a href="izostanki.php" class="nav-link <?= $currentScript === "izostanki.php" ? "active" : "" ?>">Izostanki</a>
+                <?php endif; ?>
 
                 <?php if ($user): ?>
 
-                    <a href="profile.php" class="user-name" title="Nastavitve profila">
+                    <a href="profil.php" class="user-name" title="Nastavitve profila">
                         <?= e($user["ime"]) ?> <?= e($user["priimek"]) ?>
                     </a>
 
-                    <a href="logout.php" class="btn-logout">
+                    <a href="odjava.php" class="btn-logout">
                         Odjava
                     </a>
 
@@ -205,7 +239,7 @@ function pageEnd()
 
     </main>
 
-    <script src="script.js"></script>
+    <script src="skripta.js"></script>
 
     </body>
 

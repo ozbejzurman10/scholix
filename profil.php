@@ -1,6 +1,6 @@
 <?php
 
-require_once "functions.php";
+require_once "funkcije.php";
 
 requireLogin();
 
@@ -70,7 +70,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         flash("Profil je bil uspešno posodobljen.");
 
-        redirect("profile.php");
+        redirect("profil.php");
 
     } catch (Throwable $e) {
 
@@ -139,7 +139,7 @@ $inicialke = mb_strtoupper(mb_substr($user["ime"], 0, 1) . mb_substr($user["prii
                 <span class="profile-badge profile-badge-light">Razrednik: <?= e($razrednikIme) ?></span>
             <?php endif; ?>
             <?php if (!empty($uciteljRazrednistva)): ?>
-                <span class="profile-badge profile-badge-light" style="background: #dcfce7; color: #15803d; border-color: #86efac;">
+                <span class="profile-badge profile-badge-success">
                     Razrednik: <?= e(implode(", ", $uciteljRazrednistva)) ?>
                 </span>
             <?php endif; ?>

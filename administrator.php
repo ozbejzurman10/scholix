@@ -1,6 +1,6 @@
 <?php
 
-require_once "functions.php";
+require_once "funkcije.php";
 requireRole("admin");
 
 if (!function_exists('existsAdmin')) {
@@ -72,16 +72,33 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             if ($r !== "dijak") {
                 $oddelekId = null;
             }
+
+            $ePosta = trim($_POST["e_posta"] ?? "");
+            if ($ePosta === "" || !filter_var($ePosta, FILTER_VALIDATE_EMAIL)) {
+                throw new RuntimeException("Vnesite veljaven e-poštni naslov.");
+            }
+
+            $chk = $conn->prepare("SELECT 1 FROM Uporabnik WHERE e_posta = ?");
+            $chk->execute([$ePosta]);
+            if ($chk->fetch()) {
+                throw new RuntimeException("Uporabnik s tem e-poštnim naslovom že obstaja.");
+            }
+
+            if (strlen($_POST["geslo"] ?? "") < 6) {
+                throw new RuntimeException("Geslo mora vsebovati vsaj 6 znakov.");
+            }
+
             $conn->prepare("INSERT INTO Uporabnik (ime, priimek, e_posta, geslo, vloga, oddelek_id) VALUES (?, ?, ?, ?, ?, ?)")
                  ->execute([
                      trim($_POST["ime"]),
                      trim($_POST["priimek"]),
-                     trim($_POST["e_posta"]),
+                     $ePosta,
                      password_hash($_POST["geslo"], PASSWORD_DEFAULT),
                      $r,
                      $oddelekId
                  ]);
-            flash("Uporabnik je bil uspešno dodan.");
+            $vlogaNaziv = ($r === "dijak") ? "Dijak" : "Učitelj";
+            flash($vlogaNaziv . " »" . trim($_POST["ime"]) . " " . trim($_POST["priimek"]) . "« je bil uspešno dodan.");
             $redirectTab = "uporabniki";
         }
         elseif ($a === "uredi_uporabnika" && existsAdmin("Uporabnik", $_POST["id"])) {
@@ -98,6 +115,9 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $v = [trim($_POST["ime"]), trim($_POST["priimek"]), trim($_POST["e_posta"]), $r, $oddelekId];
 
             if (!empty($_POST["geslo"])) {
+                if (strlen($_POST["geslo"]) < 6) {
+                    throw new RuntimeException("Novo geslo mora vsebovati vsaj 6 znakov.");
+                }
                 $sql .= ", geslo = ?";
                 $v[] = password_hash($_POST["geslo"], PASSWORD_DEFAULT);
             }
@@ -113,17 +133,51 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 throw new RuntimeException("Svojega računa ne morete izbrisati.");
             }
             $conn->beginTransaction();
+
+            // Izbriši datoteke oddaj dijaka ali učiteljevih nalog
+            $stOdd = $conn->prepare("SELECT datoteka_pot FROM Oddana_Naloga WHERE dijak_id = ? OR naloga_id IN (SELECT id_naloga FROM Naloga WHERE ucitelj_id = ?)");
+            $stOdd->execute([$id, $id]);
+            foreach ($stOdd->fetchAll(PDO::FETCH_COLUMN) as $f) {
+                if ($f && file_exists(__DIR__ . "/" . $f)) {
+                    @unlink(__DIR__ . "/" . $f);
+                }
+            }
             $conn->prepare("DELETE FROM Oddana_Naloga WHERE dijak_id = ? OR naloga_id IN (SELECT id_naloga FROM Naloga WHERE ucitelj_id = ?)")->execute([$id, $id]);
+
+            // Izbriši datoteke gradiv
+            $stG = $conn->prepare("SELECT datoteka_pot FROM Gradivo WHERE ucitelj_id = ?");
+            $stG->execute([$id]);
+            foreach ($stG->fetchAll(PDO::FETCH_COLUMN) as $f) {
+                if ($f && file_exists(__DIR__ . "/" . $f)) {
+                    @unlink(__DIR__ . "/" . $f);
+                }
+            }
+            $conn->prepare("DELETE FROM Gradivo_Oddelek WHERE gradivo_id IN (SELECT id_gradivo FROM Gradivo WHERE ucitelj_id = ?)")->execute([$id]);
             $conn->prepare("DELETE FROM Gradivo WHERE ucitelj_id = ?")->execute([$id]);
+
+            // Izbriši naloge in oddelke nalog
+            $conn->prepare("DELETE FROM Naloga_Oddelek WHERE naloga_id IN (SELECT id_naloga FROM Naloga WHERE ucitelj_id = ?)")->execute([$id]);
             $conn->prepare("DELETE FROM Naloga WHERE ucitelj_id = ?")->execute([$id]);
+
+            // Ocene, izostanki, pisna ocenjevanja, spremembe urnika, urnik
             $conn->prepare("DELETE FROM Ocena WHERE dijak_id = ? OR ucitelj_id = ?")->execute([$id, $id]);
             $conn->prepare("DELETE FROM Izostanek WHERE dijak_id = ?")->execute([$id]);
+            $conn->prepare("DELETE FROM Pisno_Ocenjevanje WHERE ucitelj_id = ?")->execute([$id]);
+            $conn->prepare("DELETE FROM Sprememba_Urnika WHERE ucitelj_id = ?")->execute([$id]);
             $conn->prepare("DELETE FROM Urnik WHERE ucitelj_id = ?")->execute([$id]);
+
+            // Povezave s predmeti
             $conn->prepare("DELETE FROM Ucitelj_Predmet WHERE ucitelj_id = ?")->execute([$id]);
             $conn->prepare("DELETE FROM Dijak_Predmet WHERE dijak_id = ?")->execute([$id]);
+
+            // Če je bil učitelj razrednik, sprosti razredništvo
+            $conn->prepare("UPDATE Oddelek SET razrednik_id = NULL WHERE razrednik_id = ?")->execute([$id]);
+
+            // Na koncu izbriši uporabnika
             $conn->prepare("DELETE FROM Uporabnik WHERE id_uporabnik = ?")->execute([$id]);
             $conn->commit();
-            flash("Uporabnik in povezani zapisi so bili izbrisani.");
+
+            flash("Uporabnik in vsi povezani zapisi so bili uspešno odstranjeni.");
             $redirectTab = "uporabniki";
         }
         elseif (in_array($a, ["povezi_ucitelja", "povezi_dijaka"], true)) {
@@ -156,7 +210,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         flash("Napaka: " . ($e instanceof PDOException ? "preverite podatke ali podvojeno povezavo." : $e->getMessage()));
     }
 
-    redirect("admin.php?tab=" . urlencode($redirectTab));
+    redirect("administrator.php?tab=" . urlencode($redirectTab));
 }
 
 // Pridobivanje podatkov
@@ -204,167 +258,16 @@ pageStart("Administrator");
 
 ?>
 
-<style>
-/* Stil za pregledno administratorsko ploščo z zavihki */
-.admin-header-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 15px;
-    margin-bottom: 20px;
-}
-.admin-tab-nav {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    background: #e9f0f8;
-    padding: 6px;
-    border-radius: 12px;
-    margin-bottom: 22px;
-}
-.admin-tab-btn {
-    border: none;
-    background: transparent;
-    color: var(--muted);
-    padding: 10px 16px;
-    border-radius: 9px;
-    font-size: 13px;
-    font-weight: 700;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    transition: all 0.18s ease;
-}
-.admin-tab-btn:hover {
-    color: var(--blue-dark);
-    background: rgba(255, 255, 255, 0.6);
-}
-.admin-tab-btn.active {
-    background: #fff;
-    color: var(--blue);
-    box-shadow: 0 4px 12px rgba(16, 45, 80, 0.08);
-}
-.tab-badge {
-    background: rgba(40, 111, 199, 0.12);
-    color: var(--blue);
-    padding: 2px 7px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 700;
-}
-.admin-tab-btn.active .tab-badge {
-    background: var(--blue);
-    color: #fff;
-}
-.filter-box {
-    background: #f8fbff;
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 14px 18px;
-    margin-bottom: 18px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 14px;
-    align-items: flex-end;
-}
-.filter-box label {
-    display: grid;
-    gap: 5px;
-    font-size: 13px;
-    font-weight: 700;
-}
-.filter-box input, .filter-box select {
-    min-height: 38px;
-    padding: 8px 12px;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    font: inherit;
-    background: #fff;
-}
-.collapsible-card {
-    background: #fff;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px;
-    margin-bottom: 22px;
-    box-shadow: var(--shadow);
-}
-.card-header-toggle {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-    user-select: none;
-}
-.card-header-toggle h2 {
-    margin: 0;
-    font-size: 17px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.card-toggle-btn {
-    background: #f1f5f9;
-    border: 1px solid var(--border);
-    padding: 5px 10px;
-    border-radius: 7px;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--muted);
-    cursor: pointer;
-}
-.card-toggle-btn:hover {
-    color: var(--blue);
-    background: #e2e8f0;
-}
-.card-body {
-    margin-top: 18px;
-}
-.card-body.hidden {
-    display: none;
-}
-.tab-content {
-    display: none;
-}
-.tab-content.active {
-    display: block;
-}
-.step-number {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: var(--blue);
-    color: #fff;
-    font-size: 12px;
-    font-weight: 700;
-    margin-right: 5px;
-}
-.student-highlight-box {
-    background: #eff6ff;
-    border: 1px solid #bfdbfe;
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-bottom: 15px;
-    font-size: 13px;
-    color: #1e40af;
-}
-</style>
-
 <div class="admin-header-row">
     <div>
-        <h1 style="margin: 0;">Nadzorna plošča administratorja</h1>
-        <p style="margin: 5px 0 0; color: var(--muted); font-size: 14px;">
+        <h1 class="m-0">Nadzorna plošča administratorja</h1>
+        <p class="admin-subtitle">
             Pregledno upravljanje dijakov, učiteljev, oddelkov in predmetov
         </p>
     </div>
 
     <div>
-        <button type="button" id="toggle-all-tabs-btn" class="btn small" style="background: #fff; border: 1px solid var(--border); color: var(--text);" onclick="togglePrikaziVse()">
+        <button type="button" id="toggle-all-tabs-btn" class="btn btn-white small" onclick="togglePrikaziVse()">
             Prikaži vse zavihke
         </button>
     </div>
@@ -408,6 +311,101 @@ pageStart("Administrator");
 <!-- ======================================================== -->
 <div id="tab-uporabniki" class="tab-content <?= ($activeTab === 'uporabniki') ? 'active' : '' ?>">
 
+    <!-- HITRI OBRAZCI ZA DODAJANJE DIJAKA IN UČITELJA -->
+    <div class="admin-grid mb-3">
+
+        <!-- DODAJ NOVEGA DIJAKA -->
+        <div class="collapsible-card m-0">
+            <div class="card-header-toggle" onclick="toggleCardBody('body-dodaj-dijaka', this)">
+                <h2>
+                    <span>+ Dodaj novega dijaka</span>
+                </h2>
+                <button type="button" class="card-toggle-btn">Odpri / Zapri</button>
+            </div>
+            <div id="body-dodaj-dijaka" class="card-body">
+                <form method="post" class="d-flex flex-column gap-2">
+                    <input type="hidden" name="action" value="dodaj_uporabnika">
+                    <input type="hidden" name="vloga" value="dijak">
+
+                    <div class="d-flex flex-wrap gap-2">
+                        <label class="flex-1">
+                            Ime
+                            <input name="ime" placeholder="Ime dijaka" required>
+                        </label>
+                        <label class="flex-1">
+                            Priimek
+                            <input name="priimek" placeholder="Priimek dijaka" required>
+                        </label>
+                    </div>
+
+                    <label>
+                        Razred / Oddelek
+                        <select name="oddelek_id" required>
+                            <option value="">-- Izberite razred --</option>
+                            <?php foreach ($oddelki as $o): ?>
+                                <option value="<?= $o["id_oddelek"] ?>"><?= e($o["ime"]) ?> (<?= e($o["program"]) ?>, <?= (int)$o["letnik"] ?>. letnik)</option>
+                            <?php endforeach; ?>
+                        </select>
+                    </label>
+
+                    <div class="d-flex flex-wrap gap-2">
+                        <label class="flex-1">
+                            E-pošta
+                            <input type="email" name="e_posta" placeholder="ime.priimek@sc-celje.si" required>
+                        </label>
+                        <label class="flex-1">
+                            Geslo
+                            <input type="password" name="geslo" placeholder="Vsaj 6 znakov" minlength="6" required>
+                        </label>
+                    </div>
+
+                    <button class="btn blue mt-1">+ Dodaj dijaka</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- DODAJ NOVEGA UČITELJA -->
+        <div class="collapsible-card m-0">
+            <div class="card-header-toggle" onclick="toggleCardBody('body-dodaj-ucitelja', this)">
+                <h2>
+                    <span>+ Dodaj novega učitelja</span>
+                </h2>
+                <button type="button" class="card-toggle-btn">Odpri / Zapri</button>
+            </div>
+            <div id="body-dodaj-ucitelja" class="card-body">
+                <form method="post" class="d-flex flex-column gap-2">
+                    <input type="hidden" name="action" value="dodaj_uporabnika">
+                    <input type="hidden" name="vloga" value="ucitelj">
+
+                    <div class="d-flex flex-wrap gap-2">
+                        <label class="flex-1">
+                            Ime
+                            <input name="ime" placeholder="Ime učitelja" required>
+                        </label>
+                        <label class="flex-1">
+                            Priimek
+                            <input name="priimek" placeholder="Priimek učitelja" required>
+                        </label>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2">
+                        <label class="flex-1">
+                            E-pošta
+                            <input type="email" name="e_posta" placeholder="ime.priimek@sc-ker.si" required>
+                        </label>
+                        <label class="flex-1">
+                            Geslo
+                            <input type="password" name="geslo" placeholder="Vsaj 6 znakov" minlength="6" required>
+                        </label>
+                    </div>
+
+                    <button class="btn blue mt-1">+ Dodaj učitelja</button>
+                </form>
+            </div>
+        </div>
+
+    </div>
+
     <div class="collapsible-card">
         <div class="card-header-toggle" onclick="toggleCardBody('body-uporabniki-tabela', this)">
             <h2>
@@ -443,72 +441,82 @@ pageStart("Administrator");
                     </select>
                 </label>
 
-                <label style="flex-grow: 1; min-width: 200px;">
+                <label class="flex-grow min-w-200">
                     Hitro iskanje
                     <input type="text" id="user_filter_search" placeholder="Vpiši ime, priimek ali e-pošto..." oninput="filtrirajUporabnike()">
                 </label>
 
-                <button type="button" class="btn small" style="background: #e2e8f0; color: #334155;" onclick="ponastaviFilterUporabnikov()">
+                <button type="button" class="btn btn-secondary small" onclick="ponastaviFilterUporabnikov()">
                     Počisti filter
                 </button>
             </div>
 
-            <div style="overflow-x: auto;">
+            <div class="tabela-ovoj admin-table-scroll">
                 <table id="tabela-uporabniki">
                     <thead>
                         <tr>
                             <th>Ime</th>
                             <th>Priimek</th>
                             <th>E-pošta</th>
-                            <th>Vloga</th>
-                            <th>Razred / Oddelek</th>
+                            <th class="w-110">Vloga</th>
+                            <th class="w-110">Razred</th>
                             <th>Novo geslo</th>
-                            <th></th>
-                            <th></th>
+                            <th class="text-right">Dejanja</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($users as $u): ?>
+                        <?php $uid = (int) $u["id_uporabnik"]; ?>
                         <tr class="user-row" 
                             data-vloga="<?= e($u["vloga"]) ?>" 
                             data-oddelek="<?= e($u["oddelek_ime"] ?? "") ?>" 
                             data-search="<?= strtolower(e($u["ime"] . " " . $u["priimek"] . " " . $u["e_posta"])) ?>">
-                            <form method="post">
-                                <input type="hidden" name="action" value="uredi_uporabnika">
-                                <input type="hidden" name="id" value="<?= $u["id_uporabnik"] ?>">
-                                <td><input name="ime" value="<?= e($u["ime"]) ?>" required></td>
-                                <td><input name="priimek" value="<?= e($u["priimek"]) ?>" required></td>
-                                <td><input type="email" name="e_posta" value="<?= e($u["e_posta"]) ?>" required></td>
-                                <td>
-                                    <select name="vloga">
-                                        <?php foreach (["admin", "ucitelj", "dijak"] as $r): ?>
-                                            <option value="<?= $r ?>" <?= ($u["vloga"] === $r) ? "selected" : "" ?>><?= $r ?></option>
+                            <td>
+                                <form id="edit-user-<?= $uid ?>" method="post" class="d-none">
+                                    <input type="hidden" name="action" value="uredi_uporabnika">
+                                    <input type="hidden" name="id" value="<?= $uid ?>">
+                                </form>
+                                <input form="edit-user-<?= $uid ?>" name="ime" value="<?= e($u["ime"]) ?>" class="admin-table-input" required>
+                            </td>
+                            <td>
+                                <input form="edit-user-<?= $uid ?>" name="priimek" value="<?= e($u["priimek"]) ?>" class="admin-table-input" required>
+                            </td>
+                            <td>
+                                <input form="edit-user-<?= $uid ?>" type="email" name="e_posta" value="<?= e($u["e_posta"]) ?>" class="admin-table-input" required>
+                            </td>
+                            <td>
+                                <select form="edit-user-<?= $uid ?>" name="vloga" class="admin-table-select">
+                                    <?php foreach (["admin", "ucitelj", "dijak"] as $r): ?>
+                                        <option value="<?= $r ?>" <?= ($u["vloga"] === $r) ? "selected" : "" ?>><?= $r ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td>
+                                <?php if ($u["vloga"] === "dijak"): ?>
+                                    <select form="edit-user-<?= $uid ?>" name="oddelek_id" class="admin-table-select">
+                                        <option value="">Brez</option>
+                                        <?php foreach ($oddelki as $o): ?>
+                                            <option value="<?= $o["id_oddelek"] ?>" <?= ($u["oddelek_id"] == $o["id_oddelek"]) ? "selected" : "" ?>>
+                                                <?= e($o["ime"]) ?>
+                                            </option>
                                         <?php endforeach; ?>
                                     </select>
-                                </td>
-                                <td>
-                                    <?php if ($u["vloga"] === "dijak"): ?>
-                                        <select name="oddelek_id">
-                                            <option value="">Brez oddelka</option>
-                                            <?php foreach ($oddelki as $o): ?>
-                                                <option value="<?= $o["id_oddelek"] ?>" <?= ($u["oddelek_id"] == $o["id_oddelek"]) ? "selected" : "" ?>>
-                                                    <?= e($o["ime"]) ?>
-                                                </option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    <?php else: ?>
-                                        <span style="color: var(--muted); font-size: 12px;">—</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td><input type="password" name="geslo" placeholder="Ne spremeni"></td>
-                                <td><button class="btn small">Shrani</button></td>
-                            </form>
+                                <?php else: ?>
+                                    <span class="badge-neutral">—</span>
+                                <?php endif; ?>
+                            </td>
                             <td>
-                                <form method="post">
-                                    <input type="hidden" name="action" value="izbrisi_uporabnika">
-                                    <input type="hidden" name="id" value="<?= $u["id_uporabnik"] ?>">
-                                    <button class="btn red small" onclick="return confirm('Izbrišem uporabnika in povezane zapise?')">Izbriši</button>
-                                </form>
+                                <input form="edit-user-<?= $uid ?>" type="password" name="geslo" placeholder="Ne spremeni" class="admin-table-input">
+                            </td>
+                            <td class="text-right nowrap">
+                                <div class="d-inline-flex gap-2 items-center">
+                                    <button form="edit-user-<?= $uid ?>" type="submit" class="btn blue small">Shrani</button>
+                                    <form method="post" class="inline m-0">
+                                        <input type="hidden" name="action" value="izbrisi_uporabnika">
+                                        <input type="hidden" name="id" value="<?= $uid ?>">
+                                        <button type="submit" class="gumb-odstrani" onclick="return confirm('Ali res želite trajno odstraniti tega uporabnika (dijaka/učitelja) in vse njegove povezane zapise?')">Odstrani</button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -516,7 +524,7 @@ pageStart("Administrator");
                 </table>
             </div>
 
-            <p id="uporabniki-no-results" style="display: none; padding: 20px; text-align: center; color: var(--muted);">
+            <p id="uporabniki-no-results" class="table-empty-hint d-none">
                 Ni uporabnikov, ki bi ustrezali izbranim filtrom.
             </p>
 
@@ -536,7 +544,7 @@ pageStart("Administrator");
         <div class="card-header-toggle" onclick="toggleCardBody('body-povezi-dijaka', this)">
             <h2>
                 <span>Poveži dijaka s predmetom</span>
-                <small style="color: var(--muted); font-weight: normal; font-size: 13px;">(Najprej izberi razred, nato dijaka)</small>
+                <small class="text-muted font-normal text-sm">(Najprej izberi razred, nato dijaka)</small>
             </h2>
             <button type="button" class="card-toggle-btn">Skrij / Pokaži</button>
         </div>
@@ -547,13 +555,13 @@ pageStart("Administrator");
                 <strong>Navodilo:</strong> Za enostavno dodajanje najprej v 1. koraku izberite razred/oddelek. Spustni seznam dijakov se bo takoj prilagodil in prikazal le dijake tistega razreda.
             </div>
 
-            <form method="post" style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end;">
+            <form method="post" class="d-flex flex-wrap gap-3 items-end">
                 <input type="hidden" name="action" value="povezi_dijaka">
 
                 <!-- 1. KORAK: RAZRED / ODDELEK -->
-                <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700; min-width: 240px;">
+                <label class="d-grid gap-1 font-bold text-sm min-w-240">
                     <span><span class="step-number">1</span> Izberi razred / oddelek</span>
-                    <select id="povezi_oddelek_select" onchange="posodobiDijakeObrazec(this.value)" style="min-height: 40px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;">
+                    <select id="povezi_oddelek_select" onchange="posodobiDijakeObrazec(this.value)" class="form-input-h40">
                         <option value="">-- Izberite razred / oddelek --</option>
                         <?php foreach ($oddelki as $o): ?>
                             <option value="<?= $o["id_oddelek"] ?>">
@@ -564,17 +572,17 @@ pageStart("Administrator");
                 </label>
 
                 <!-- 2. KORAK: DIJAK (OMOGOČEN ŠELE PO IZBIRI RAZREDA) -->
-                <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700; min-width: 260px;">
+                <label class="d-grid gap-1 font-bold text-sm min-w-260">
                     <span><span class="step-number">2</span> Izberi dijaka</span>
-                    <select name="dijak_id" id="povezi_dijak_select" disabled required style="min-height: 40px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;">
+                    <select name="dijak_id" id="povezi_dijak_select" disabled required class="form-input-h40">
                         <option value="">-- Najprej izberite razred zgoraj --</option>
                     </select>
                 </label>
 
                 <!-- 3. KORAK: PREDMET -->
-                <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700; min-width: 250px;">
+                <label class="d-grid gap-1 font-bold text-sm min-w-250">
                     <span><span class="step-number">3</span> Izberi predmet</span>
-                    <select name="predmet_id" required style="min-height: 40px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;">
+                    <select name="predmet_id" required class="form-input-h40">
                         <option value="">-- Izberite predmet --</option>
                         <?php foreach ($predmeti as $p): ?>
                             <option value="<?= $p["id_predmet"] ?>"><?= e($p["naziv"]) ?></option>
@@ -582,7 +590,7 @@ pageStart("Administrator");
                     </select>
                 </label>
 
-                <button class="btn blue" style="min-height: 40px; padding: 0 20px;">
+                <button class="btn blue btn-h40">
                     Poveži dijaka s predmetom
                 </button>
             </form>
@@ -616,17 +624,17 @@ pageStart("Administrator");
                     </select>
                 </label>
 
-                <label style="flex-grow: 1; min-width: 220px;">
+                <label class="flex-grow min-w-220">
                     Hitro iskanje povezave
                     <input type="text" id="filter_dp_search" placeholder="Iskanje po priimku dijaka ali nazivu predmeta..." oninput="filtrirajPovezaveDijakov()">
                 </label>
 
-                <button type="button" class="btn small" style="background: #e2e8f0; color: #334155;" onclick="ponastaviFilterDP()">
+                <button type="button" class="btn btn-secondary small" onclick="ponastaviFilterDP()">
                     Počisti
                 </button>
             </div>
 
-            <div id="dp-container" style="max-height: 520px; overflow-y: auto; padding-right: 5px;">
+            <div id="dp-container" class="scroll-box-dp">
                 <?php foreach ($dp as $x): ?>
                 <div class="list-row dp-row" 
                      data-oddelek="<?= e($x["oddelek_ime"] ?? "") ?>" 
@@ -634,23 +642,23 @@ pageStart("Administrator");
                     <div>
                         <strong><?= e($x["priimek"] . " " . $x["ime"]) ?></strong>
                         <?php if (!empty($x["oddelek_ime"])): ?>
-                            <span class="badge-ok" style="font-size: 11px; margin-left: 6px;"><?= e($x["oddelek_ime"]) ?></span>
+                            <span class="badge-ok text-xs ml-1"><?= e($x["oddelek_ime"]) ?></span>
                         <?php endif; ?>
-                        <span style="color: var(--muted); margin: 0 8px;">&rarr;</span>
-                        <span style="color: var(--blue-dark); font-weight: 600;"><?= e($x["naziv"]) ?></span>
+                        <span class="text-muted mx-2">&rarr;</span>
+                        <span class="text-primary font-semibold"><?= e($x["naziv"]) ?></span>
                     </div>
 
-                    <form method="post" style="margin: 0;">
+                    <form method="post" class="m-0">
                         <input type="hidden" name="action" value="odstrani_dijaka">
                         <input type="hidden" name="dijak_id" value="<?= $x["id_uporabnik"] ?>">
                         <input type="hidden" name="predmet_id" value="<?= $x["id_predmet"] ?>">
-                        <button class="btn red small" onclick="return confirm('Ali res želite odstraniti dijaka s tega predmeta?')">Odstrani</button>
+                        <button class="gumb-odstrani" onclick="return confirm('Ali res želite odstraniti dijaka s tega predmeta?')">Odstrani</button>
                     </form>
                 </div>
                 <?php endforeach; ?>
             </div>
 
-            <p id="dp-no-results" style="display: none; padding: 20px; text-align: center; color: var(--muted);">
+            <p id="dp-no-results" class="table-empty-hint d-none">
                 Ni povezav, ki bi ustrezale izbranemu filtru.
             </p>
 
@@ -675,12 +683,12 @@ pageStart("Administrator");
         </div>
 
         <div id="body-povezi-ucitelja" class="card-body">
-            <form method="post" style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end;">
+            <form method="post" class="d-flex flex-wrap gap-3 items-end">
                 <input type="hidden" name="action" value="povezi_ucitelja">
 
-                <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700; min-width: 260px;">
+                <label class="d-grid gap-1 font-bold text-sm min-w-260">
                     Izberi učitelja
-                    <select name="ucitelj_id" required style="min-height: 40px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;">
+                    <select name="ucitelj_id" required class="form-input-h40">
                         <option value="">-- Izberite učitelja --</option>
                         <?php foreach ($ucitelji as $u): ?>
                             <option value="<?= $u["id_uporabnik"] ?>">
@@ -690,9 +698,9 @@ pageStart("Administrator");
                     </select>
                 </label>
 
-                <label style="display: grid; gap: 6px; font-size: 13px; font-weight: 700; min-width: 260px;">
+                <label class="d-grid gap-1 font-bold text-sm min-w-260">
                     Izberi predmet
-                    <select name="predmet_id" required style="min-height: 40px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px;">
+                    <select name="predmet_id" required class="form-input-h40">
                         <option value="">-- Izberite predmet --</option>
                         <?php foreach ($predmeti as $p): ?>
                             <option value="<?= $p["id_predmet"] ?>"><?= e($p["naziv"]) ?></option>
@@ -700,7 +708,7 @@ pageStart("Administrator");
                     </select>
                 </label>
 
-                <button class="btn blue" style="min-height: 40px; padding: 0 20px;">
+                <button class="btn blue btn-h40">
                     Poveži učitelja s predmetom
                 </button>
             </form>
@@ -720,35 +728,38 @@ pageStart("Administrator");
         <div id="body-seznam-up" class="card-body">
 
             <div class="filter-box">
-                <label style="flex-grow: 1;">
+                <label class="flex-grow">
                     Iskanje po učitelju ali predmetu
                     <input type="text" id="filter_up_search" placeholder="Vpiši ime učitelja ali naziv predmeta..." oninput="filtrirajPovezaveUciteljev()">
                 </label>
-                <button type="button" class="btn small" style="background: #e2e8f0; color: #334155;" onclick="ponastaviFilterUP()">
+                <button type="button" class="btn btn-secondary small" onclick="ponastaviFilterUP()">
                     Počisti
                 </button>
             </div>
 
-            <div id="up-container" style="max-height: 520px; overflow-y: auto; padding-right: 5px;">
+            <div id="up-container" class="scroll-box-dp">
                 <?php foreach ($up as $x): ?>
                 <div class="list-row up-row" data-search="<?= strtolower(e($x["priimek"] . " " . $x["ime"] . " " . $x["naziv"])) ?>">
                     <div>
                         <strong><?= e($x["priimek"] . " " . $x["ime"]) ?></strong>
-                        <span style="color: var(--muted); margin: 0 8px;">poučuje</span>
-                        <span style="color: var(--blue-dark); font-weight: 600;"><?= e($x["naziv"]) ?></span>
+                        <span class="text-muted mx-2">poučuje</span>
+                        <span class="text-primary font-semibold"><?= e($x["naziv"]) ?></span>
                     </div>
 
-                    <form method="post" style="margin: 0;">
-                        <input type="hidden" name="action" value="odstrani_ucitelja">
-                        <input type="hidden" name="ucitelj_id" value="<?= $x["id_uporabnik"] ?>">
-                        <input type="hidden" name="predmet_id" value="<?= $x["id_predmet"] ?>">
-                        <button class="btn red small" onclick="return confirm('Ali res želite odstraniti učitelja s tega predmeta?')">Odstrani</button>
-                    </form>
+                    <div class="d-inline-flex gap-2 items-center">
+                        <a href="urnik.php?ucitelj=<?= (int)$x["id_uporabnik"] ?>" class="btn small btn-white">Poglej urnik</a>
+                        <form method="post" class="m-0">
+                            <input type="hidden" name="action" value="odstrani_ucitelja">
+                            <input type="hidden" name="ucitelj_id" value="<?= $x["id_uporabnik"] ?>">
+                            <input type="hidden" name="predmet_id" value="<?= $x["id_predmet"] ?>">
+                            <button class="gumb-odstrani" onclick="return confirm('Ali res želite odstraniti učitelja s tega predmeta?')">Odstrani</button>
+                        </form>
+                    </div>
                 </div>
                 <?php endforeach; ?>
             </div>
 
-            <p id="up-no-results" style="display: none; padding: 20px; text-align: center; color: var(--muted);">
+            <p id="up-no-results" class="table-empty-hint d-none">
                 Ni povezav, ki bi ustrezale iskanju.
             </p>
 
@@ -773,20 +784,20 @@ pageStart("Administrator");
         </div>
 
         <div id="body-dodaj-predmet" class="card-body">
-            <form method="post" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
+            <form method="post" class="d-flex flex-wrap gap-3 items-end">
                 <input type="hidden" name="action" value="dodaj_predmet">
 
-                <label style="display: grid; gap: 5px; font-size: 13px; font-weight: 700; min-width: 260px;">
+                <label class="d-grid gap-1 font-bold text-sm min-w-260">
                     Naziv predmeta
-                    <input name="naziv" placeholder="npr. Matematika, Robotika..." required style="min-height: 38px;">
+                    <input name="naziv" placeholder="npr. Matematika, Robotika..." required class="form-input-h38">
                 </label>
 
-                <label style="display: grid; gap: 5px; font-size: 13px; font-weight: 700; flex-grow: 1; min-width: 280px;">
+                <label class="d-grid gap-1 font-bold text-sm flex-grow min-w-280">
                     Opis predmeta (neobvezno)
-                    <input name="opis" placeholder="Kratek opis predmeta..." style="min-height: 38px;">
+                    <input name="opis" placeholder="Kratek opis predmeta..." class="form-input-h38">
                 </label>
 
-                <button class="btn blue" style="min-height: 38px;">Dodaj predmet</button>
+                <button class="btn blue btn-h38">Dodaj predmet</button>
             </form>
         </div>
     </div>
@@ -804,41 +815,47 @@ pageStart("Administrator");
         <div id="body-seznam-predmetov" class="card-body">
 
             <div class="filter-box">
-                <label style="flex-grow: 1;">
+                <label class="flex-grow">
                     Hitro iskanje predmeta
                     <input type="text" id="filter_predmeti_search" placeholder="Vpiši del naziva predmeta..." oninput="filtrirajPredmete()">
                 </label>
-                <button type="button" class="btn small" style="background: #e2e8f0; color: #334155;" onclick="ponastaviFilterPredmetov()">
+                <button type="button" class="btn btn-secondary small" onclick="ponastaviFilterPredmetov()">
                     Počisti
                 </button>
             </div>
 
-            <div style="max-height: 580px; overflow-y: auto;">
+            <div class="tabela-ovoj admin-table-scroll">
                 <table id="tabela-predmeti">
                     <thead>
                         <tr>
-                            <th style="min-width: 200px;">Naziv</th>
-                            <th>Opis</th>
-                            <th style="width: 80px;"></th>
-                            <th style="width: 80px;"></th>
+                            <th class="min-w-200">Naziv predmeta</th>
+                            <th>Opis predmeta</th>
+                            <th class="text-right">Dejanja</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($predmeti as $p): ?>
+                        <?php $pid = (int) $p["id_predmet"]; ?>
                         <tr class="predmet-row" data-search="<?= strtolower(e($p["naziv"] . " " . ($p["opis"] ?? ""))) ?>">
-                            <form method="post">
-                                <input type="hidden" name="action" value="uredi_predmet">
-                                <input type="hidden" name="id" value="<?= $p["id_predmet"] ?>">
-                                <td><input name="naziv" value="<?= e($p["naziv"]) ?>" required></td>
-                                <td><input name="opis" value="<?= e($p["opis"]) ?>"></td>
-                                <td><button class="btn small">Shrani</button></td>
-                            </form>
                             <td>
-                                <form method="post">
-                                    <input type="hidden" name="action" value="izbrisi_predmet">
-                                    <input type="hidden" name="id" value="<?= $p["id_predmet"] ?>">
-                                    <button class="btn red small" onclick="return confirm('Izbrišem predmet in vse povezane zapise?')">Izbriši</button>
+                                <form id="edit-predmet-<?= $pid ?>" method="post" class="d-none">
+                                    <input type="hidden" name="action" value="uredi_predmet">
+                                    <input type="hidden" name="id" value="<?= $pid ?>">
                                 </form>
+                                <input form="edit-predmet-<?= $pid ?>" name="naziv" value="<?= e($p["naziv"]) ?>" class="admin-table-input" required>
+                            </td>
+                            <td>
+                                <input form="edit-predmet-<?= $pid ?>" name="opis" value="<?= e($p["opis"]) ?>" placeholder="Brez opisa" class="admin-table-input">
+                            </td>
+                            <td class="text-right nowrap">
+                                <div class="d-inline-flex gap-2 items-center">
+                                    <button form="edit-predmet-<?= $pid ?>" type="submit" class="btn blue small">Shrani</button>
+                                    <form method="post" class="inline m-0">
+                                        <input type="hidden" name="action" value="izbrisi_predmet">
+                                        <input type="hidden" name="id" value="<?= $pid ?>">
+                                        <button type="submit" class="gumb-odstrani" onclick="return confirm('Izbrišem predmet in vse povezane zapise?')">Izbriši</button>
+                                    </form>
+                                </div>
                             </td>
                         </tr>
                         <?php endforeach; ?>
@@ -846,7 +863,7 @@ pageStart("Administrator");
                 </table>
             </div>
 
-            <p id="predmeti-no-results" style="display: none; padding: 20px; text-align: center; color: var(--muted);">
+            <p id="predmeti-no-results" class="table-empty-hint d-none">
                 Ni predmetov, ki bi ustrezali iskanju.
             </p>
 
@@ -871,53 +888,53 @@ pageStart("Administrator");
         </div>
 
         <div id="body-seznam-oddelkov" class="card-body">
-            <p style="color: var(--muted); font-size: 13px; margin: 0 0 16px;">
+            <p class="admin-tab-intro">
                 Tukaj lahko za vsak posamezni oddelek nastavite ali zamenjate razrednika. Samo razrednik posameznega oddelka lahko v modulu <em>Izostanki</em> opravičuje izostanke dijakov svojega oddelka.
             </p>
 
-            <div style="overflow-x: auto;">
+            <div class="tabela-ovoj">
                 <table>
                     <thead>
                         <tr>
-                            <th style="width: 90px;">Razred</th>
-                            <th style="width: 80px;">Letnik</th>
+                            <th class="w-90">Razred</th>
+                            <th class="w-80">Letnik</th>
                             <th>Izobraževalni program</th>
-                            <th style="width: 110px;">Št. dijakov</th>
+                            <th class="w-110">Št. dijakov</th>
                             <th>Dodeljeni razrednik</th>
-                            <th style="width: 100px;"></th>
+                            <th class="text-right">Dejanja</th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php foreach ($oddelki as $o): ?>
+                        <?php $oid = (int) $o["id_oddelek"]; ?>
                         <tr>
-                            <form method="post">
-                                <input type="hidden" name="action" value="nastavi_razrednika">
-                                <input type="hidden" name="oddelek_id" value="<?= (int)$o["id_oddelek"] ?>">
-
-                                <td>
-                                    <strong style="color: var(--blue-dark); font-size: 15px;"><?= e($o["ime"]) ?></strong>
-                                </td>
-                                <td><?= (int)$o["letnik"] ?>. letnik</td>
-                                <td><?= e($o["program"]) ?></td>
-                                <td>
-                                    <span style="display: inline-block; padding: 2px 7px; border-radius: 6px; background: #f1f5f9; font-weight: 600; font-size: 12px;">
-                                        <?= (int)$o["st_dijakov"] ?> dijakov
-                                    </span>
-                                </td>
-                                <td>
-                                    <select name="razrednik_id" style="min-height: 36px; padding: 6px 10px; width: 100%; max-width: 320px;">
-                                        <option value="">-- Brez razrednika --</option>
-                                        <?php foreach ($ucitelji as $u): ?>
-                                            <option value="<?= (int)$u["id_uporabnik"] ?>" <?= ((int)($o["razrednik_id"] ?? 0) === (int)$u["id_uporabnik"]) ? "selected" : "" ?>>
-                                                <?= e($u["priimek"] . " " . $u["ime"]) ?> (<?= e($u["e_posta"]) ?>)
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </td>
-                                <td>
-                                    <button class="btn blue small" style="width: 100%;">Shrani</button>
-                                </td>
-                            </form>
+                            <td>
+                                <form id="edit-oddelek-<?= $oid ?>" method="post" class="d-none">
+                                    <input type="hidden" name="action" value="nastavi_razrednika">
+                                    <input type="hidden" name="oddelek_id" value="<?= $oid ?>">
+                                </form>
+                                <strong class="text-primary text-md"><?= e($o["ime"]) ?></strong>
+                            </td>
+                            <td><?= (int)$o["letnik"] ?>. letnik</td>
+                            <td><?= e($o["program"]) ?></td>
+                            <td>
+                                <span class="badge-neutral">
+                                    <?= (int)$o["st_dijakov"] ?> dijakov
+                                </span>
+                            </td>
+                            <td>
+                                <select form="edit-oddelek-<?= $oid ?>" name="razrednik_id" class="admin-table-select max-w-320">
+                                    <option value="">-- Brez razrednika --</option>
+                                    <?php foreach ($ucitelji as $u): ?>
+                                        <option value="<?= (int)$u["id_uporabnik"] ?>" <?= ((int)($o["razrednik_id"] ?? 0) === (int)$u["id_uporabnik"]) ? "selected" : "" ?>>
+                                            <?= e($u["priimek"] . " " . $u["ime"]) ?> (<?= e($u["e_posta"]) ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                            <td class="text-right nowrap">
+                                <button form="edit-oddelek-<?= $oid ?>" type="submit" class="btn blue small">Shrani</button>
+                            </td>
                         </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -940,11 +957,11 @@ pageStart("Administrator");
         <!-- DODAJ UPORABNIKA -->
         <section class="panel">
             <h2>Dodaj novega uporabnika</h2>
-            <p style="color: var(--muted); font-size: 13px; margin-top: 0;">
+            <p class="admin-tab-intro">
                 Ustvarite nov račun za dijaka ali učitelja. Pri dijakih določite razred.
             </p>
 
-            <form method="post">
+            <form method="post" class="d-flex flex-column gap-3">
                 <input type="hidden" name="action" value="dodaj_uporabnika">
 
                 <label>
@@ -955,7 +972,7 @@ pageStart("Administrator");
                     </select>
                 </label>
 
-                <div id="dodaj_oddelek_wrap" style="width: 100%;">
+                <div id="dodaj_oddelek_wrap" class="w-full">
                     <label>
                         Razred / Oddelek (za dijaka)
                         <select name="oddelek_id">
@@ -987,18 +1004,18 @@ pageStart("Administrator");
                     <input type="password" name="geslo" placeholder="Najmanj 6 znakov" minlength="6" required>
                 </label>
 
-                <button class="btn blue" style="width: 100%; margin-top: 10px;">Ustvari uporabnika</button>
+                <button class="btn blue w-full mt-2">Ustvari uporabnika</button>
             </form>
         </section>
 
         <!-- DODAJ PREDMET -->
         <section class="panel">
             <h2>Dodaj nov predmet</h2>
-            <p style="color: var(--muted); font-size: 13px; margin-top: 0;">
+            <p class="admin-tab-intro">
                 Dodajte nov učni predmet v bazo šole.
             </p>
 
-            <form method="post">
+            <form method="post" class="d-flex flex-column gap-3">
                 <input type="hidden" name="action" value="dodaj_predmet">
 
                 <label>
@@ -1008,10 +1025,10 @@ pageStart("Administrator");
 
                 <label>
                     Opis predmeta
-                    <textarea name="opis" placeholder="Kratek opis predmeta..." style="min-height: 100px;"></textarea>
+                    <textarea name="opis" placeholder="Kratek opis predmeta..." class="form-textarea-h100"></textarea>
                 </label>
 
-                <button class="btn blue" style="width: 100%; margin-top: 10px;">Ustvari predmet</button>
+                <button class="btn blue w-full mt-2">Ustvari predmet</button>
             </form>
         </section>
 

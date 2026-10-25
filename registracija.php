@@ -1,9 +1,9 @@
 <?php
 
-require_once "functions.php";
+require_once "funkcije.php";
 
 if (isset($_SESSION["user_id"])) {
-    redirect("dashboard.php");
+    redirect("nadzorna_plosca.php");
 }
 
 $error = "";
@@ -72,7 +72,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         }
 
         flash("Registracija je bila uspešna! Sedaj se lahko prijavite s svojimi podatki.");
-        redirect("login.php");
+        redirect("prijava.php");
 
     } catch (Throwable $e) {
         $error = $e->getMessage();
@@ -85,14 +85,14 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 <head>
     <meta charset="UTF-8">
     <title>Registracija dijaka - Scholix</title>
-    <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . "/style.css") ?>">
+    <link rel="stylesheet" href="stil.css?v=<?= filemtime(__DIR__ . "/stil.css") ?>">
 </head>
 <body class="auth-page">
 
-<div class="auth-card" style="max-width: 440px;">
+<div class="auth-card">
 
-    <a href="login.php" class="back-link">
-        ← Nazaj na prijavo
+    <a href="prijava.php" class="back-link" aria-label="Nazaj">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
     </a>
 
     <h1>Registracija dijaka</h1>
@@ -109,13 +109,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     <form method="POST" class="auth-form">
 
-        <div style="display: flex; gap: 10px;">
-            <label style="flex: 1;">
+        <div class="form-row-2">
+            <label>
                 Ime
                 <input type="text" name="ime" value="<?= e($_POST["ime"] ?? "") ?>" required>
             </label>
 
-            <label style="flex: 1;">
+            <label>
                 Priimek
                 <input type="text" name="priimek" value="<?= e($_POST["priimek"] ?? "") ?>" required>
             </label>
@@ -154,18 +154,18 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             </div>
         </label>
 
-        <button class="btn blue" style="width: 100%; margin-top: 10px;">
+        <button class="btn blue btn-block mt-2">
             Registriraj se
         </button>
 
     </form>
 
-    <p class="auth-footer" style="margin-top: 18px;">
-        Že imate račun? <a href="login.php" style="color: var(--blue); font-weight: 700;">Prijavite se tukaj</a>.
+    <p class="auth-footer">
+        Že imate račun? <a href="prijava.php" class="link-bold">Prijavite se tukaj</a>.
     </p>
 
 </div>
 
-<script src="script.js"></script>
+<script src="skripta.js"></script>
 </body>
 </html>

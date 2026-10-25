@@ -42,21 +42,16 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const registerForm =
         document.querySelector(".auth-form");
+    const regPass =
+        document.getElementById("reg_pass");
+    const regPass2 =
+        document.getElementById("reg_pass2");
 
-    if (
-        registerForm &&
-        document.getElementById("password_confirm")
-    ) {
+    if (registerForm && regPass && regPass2) {
 
         registerForm.addEventListener("submit", function (event) {
 
-            const password =
-                document.getElementById("reg_password").value;
-
-            const confirm =
-                document.getElementById("password_confirm").value;
-
-            if (password !== confirm) {
+            if (regPass.value !== regPass2.value) {
 
                 event.preventDefault();
 

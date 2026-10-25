@@ -1,3 +1,8 @@
+CREATE DATABASE IF NOT EXISTS scholix CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE scholix;
+
+SET FOREIGN_KEY_CHECKS = 0;
+
 CREATE TABLE Oddelek (
     id_oddelek INT AUTO_INCREMENT PRIMARY KEY,
     ime VARCHAR(20) NOT NULL UNIQUE,
@@ -14,6 +19,9 @@ CREATE TABLE Uporabnik (
     geslo VARCHAR(255) NOT NULL,
     vloga VARCHAR(20) NOT NULL,
     oddelek_id INT NULL,
+    kabinet VARCHAR(50) NULL,
+    telefon VARCHAR(50) NULL,
+    govorilne_ure VARCHAR(150) NULL,
     ustvarjeno DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (oddelek_id) REFERENCES Oddelek(id_oddelek),
     CHECK (vloga IN ('admin', 'ucitelj', 'dijak'))
@@ -73,6 +81,14 @@ CREATE TABLE Naloga (
     FOREIGN KEY (ucitelj_id) REFERENCES Uporabnik(id_uporabnik)
 );
 
+CREATE TABLE Naloga_Oddelek (
+    naloga_id INT NOT NULL,
+    oddelek_id INT NOT NULL,
+    PRIMARY KEY (naloga_id, oddelek_id),
+    FOREIGN KEY (naloga_id) REFERENCES Naloga(id_naloga) ON DELETE CASCADE,
+    FOREIGN KEY (oddelek_id) REFERENCES Oddelek(id_oddelek) ON DELETE CASCADE
+);
+
 CREATE TABLE Oddana_Naloga (
     id_oddana INT AUTO_INCREMENT PRIMARY KEY,
     naloga_id INT NOT NULL,
@@ -93,8 +109,10 @@ CREATE TABLE Ocena (
     predmet_id INT NOT NULL,
     ucitelj_id INT NOT NULL,
     ocena INT NOT NULL,
+    vrsta_ocenjevanja VARCHAR(50) NOT NULL DEFAULT 'Pisno ocenjevanje',
     naslov_ocene VARCHAR(100) NOT NULL,
     opis TEXT,
+    ocenjevanje_id INT NULL,
     datum_ocenitve DATE NOT NULL,
     FOREIGN KEY (dijak_id) REFERENCES Uporabnik(id_uporabnik),
     FOREIGN KEY (predmet_id) REFERENCES Predmet(id_predmet),
@@ -155,3 +173,24 @@ CREATE TABLE Sprememba_Urnika (
     FOREIGN KEY (predmet_id) REFERENCES Predmet(id_predmet) ON DELETE CASCADE,
     FOREIGN KEY (ucitelj_id) REFERENCES Uporabnik(id_uporabnik) ON DELETE CASCADE
 );
+
+CREATE TABLE Pisno_Ocenjevanje (
+    id_ocenjevanje INT AUTO_INCREMENT PRIMARY KEY,
+    datum DATE NOT NULL,
+    ura INT NOT NULL,
+    predmet_id INT NOT NULL,
+    ucitelj_id INT NOT NULL,
+    oddelek_id INT NOT NULL,
+    naslov VARCHAR(150) NOT NULL,
+    opis VARCHAR(255) NULL,
+    ustvarjeno DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_ocenjevanje_datum (datum),
+    FOREIGN KEY (predmet_id) REFERENCES Predmet(id_predmet) ON DELETE CASCADE,
+    FOREIGN KEY (ucitelj_id) REFERENCES Uporabnik(id_uporabnik) ON DELETE CASCADE,
+    FOREIGN KEY (oddelek_id) REFERENCES Oddelek(id_oddelek) ON DELETE CASCADE
+);
+
+ALTER TABLE Oddelek
+    ADD CONSTRAINT fk_oddelek_razrednik FOREIGN KEY (razrednik_id) REFERENCES Uporabnik(id_uporabnik) ON DELETE SET NULL;
+
+SET FOREIGN_KEY_CHECKS = 1;

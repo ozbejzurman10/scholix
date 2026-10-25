@@ -1,11 +1,11 @@
 <?php
 
-require_once "functions.php";
+require_once "funkcije.php";
 
 // Strani, na katere lahko začetna stran preusmeri po prijavi
-$dovoljeneStrani = ["dashboard.php", "urnik.php", "ocene.php", "izostanki.php", "profile.php"];
+$dovoljeneStrani = ["nadzorna_plosca.php", "naloge.php", "urnik.php", "govorilne.php", "ocene.php", "izostanki.php", "profil.php"];
 $next = $_GET["next"] ?? "";
-$cilj = in_array($next, $dovoljeneStrani, true) ? $next : "dashboard.php";
+$cilj = in_array($next, $dovoljeneStrani, true) ? $next : "nadzorna_plosca.php";
 
 if (isset($_SESSION["user_id"])) {
     redirect($cilj);
@@ -54,7 +54,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
     <title>Prijava - Scholix</title>
 
-    <link rel="stylesheet" href="style.css?v=<?= filemtime(__DIR__ . "/style.css") ?>">
+    <link rel="stylesheet" href="stil.css?v=<?= filemtime(__DIR__ . "/stil.css") ?>">
 
 </head>
 
@@ -62,8 +62,8 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 <div class="auth-card">
 
-    <a href="index.php" class="back-link">
-        ← Nazaj
+    <a href="index.php" class="back-link" aria-label="Nazaj">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
     </a>
 
     <h1>Prijava</h1>
@@ -112,12 +112,12 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
 
     <p class="auth-footer">
-        Še nimate računa? <a href="register.php" style="color: var(--blue); font-weight: 700;">Registrirajte se kot dijak</a>.
+        Še nimate računa? <a href="registracija.php" class="link-bold">Registrirajte se kot dijak</a>.
     </p>
 
 </div>
 
-<script src="script.js"></script>
+<script src="skripta.js"></script>
 </body>
 
 </html>

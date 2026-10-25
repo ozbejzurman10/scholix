@@ -1,6 +1,6 @@
 <?php
 
-require_once "functions.php";
+require_once "funkcije.php";
 
 requireRole("dijak");
 
@@ -20,7 +20,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $stmt->execute([$user["id_uporabnik"], $predmetId]);
             flash("Predmet je bil dodan na vaš seznam.");
         }
-        redirect("student.php");
+        redirect("dijak.php?tab=predmeti");
     }
 
     if ($action === "odstrani_predmet") {
@@ -30,7 +30,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $stmt->execute([$user["id_uporabnik"], $predmetId]);
             flash("Predmet je bil odstranjen z vašega seznama.");
         }
-        redirect("student.php");
+        redirect("dijak.php?tab=predmeti");
     }
 
     // ODDAJA NALOGE – korak 1: začasno shranjevanje
@@ -57,13 +57,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         if (!$naloga) {
             flash("Te naloge ne moreš oddati.");
-            redirect("student.php");
+            redirect("dijak.php?tab=naloge");
         }
 
 
         if (!uploadIsValid($_FILES["datoteka"] ?? [])) {
             flash("Datoteka ni veljavna ali je večja od 40 MB.");
-            redirect("student.php");
+            redirect("dijak.php?tab=naloge");
         }
 
 
@@ -75,13 +75,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         if ($extension === "" || !preg_match('/^[a-z0-9]{1,10}$/', $extension)) {
             flash("Datoteka nima veljavne končnice.");
-            redirect("student.php");
+            redirect("dijak.php?tab=naloge");
         }
 
         // Prepreči PHP datoteke
         if (in_array($extension, ["php", "phtml", "phar", "php3", "php4", "php5", "php7", "phps"], true)) {
             flash("Nalaganje PHP datotek ni dovoljeno.");
-            redirect("student.php");
+            redirect("dijak.php?tab=naloge");
         }
 
 
@@ -123,7 +123,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
             if (!move_uploaded_file($_FILES["datoteka"]["tmp_name"], $tmpPath)) {
                 flash("Datoteke ni bilo mogoče shraniti.");
-                redirect("student.php");
+                redirect("dijak.php?tab=naloge");
             }
 
             // Nastavi potrditev v sejo
@@ -137,7 +137,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
                 "sporocilo"     => "Za to nalogo že obstaja oddaja. Ali jo želiš povoziti?"
             ];
 
-            redirect("student.php");
+            redirect("dijak.php?tab=naloge");
         }
 
 
@@ -176,13 +176,13 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                 unset($_SESSION["potrditev"]);
                 flash("Naloga je bila uspešno ponovno oddana.");
-                redirect("student.php");
+                redirect("dijak.php?tab=naloge");
 
             } else {
                 // Tmp datoteka ne obstaja, poskusi novo oddajo z naloženo datoteko
                 if (!move_uploaded_file($_FILES["datoteka"]["tmp_name"], $fullPath)) {
                     flash("Datoteke ni bilo mogoče shraniti.");
-                    redirect("student.php");
+                    redirect("dijak.php?tab=naloge");
                 }
 
                 $stmt = $conn->prepare(
@@ -201,7 +201,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
                 unset($_SESSION["potrditev"]);
                 flash("Naloga je bila uspešno ponovno oddana.");
-                redirect("student.php");
+                redirect("dijak.php?tab=naloge");
             }
         }
 
@@ -211,7 +211,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             $fullPath
         )) {
             flash("Datoteke ni bilo mogoče shraniti.");
-            redirect("student.php");
+            redirect("dijak.php?tab=naloge");
         }
 
         $stmt = $conn->prepare(
@@ -235,7 +235,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         flash("Naloga je bila uspešno oddana.");
 
-        redirect("student.php");
+        redirect("dijak.php?tab=naloge");
     }
 
 
@@ -280,7 +280,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
             flash("Začasna datoteka je potekla. Prosimo, ponovno oddajte nalogo.");
         }
 
-        redirect("student.php");
+        redirect("dijak.php?tab=naloge");
     }
 
 
@@ -299,7 +299,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
 
         unset($_SESSION["potrditev"]);
         flash("Ponovna oddaja je bila preklicana.");
-        redirect("student.php");
+        redirect("dijak.php?tab=naloge");
     }
 }
 
@@ -314,7 +314,7 @@ $stmt = $conn->prepare(
      FROM Predmet p
      JOIN Dijak_Predmet dp
        ON dp.predmet_id = p.id_predmet
-     WHERE dp.dijak_id = ?
+     WHERE dp.dijak_id = ? AND LOWER(p.naziv) <> 'razredna ura'
      ORDER BY p.naziv"
 );
 
@@ -324,7 +324,7 @@ $stmt->execute([
 
 $mojiPredmeti = $stmt->fetchAll();
 $mojiPredmetiIds = array_map('intval', array_column($mojiPredmeti, "id_predmet"));
-$vsiPredmeti = $conn->query("SELECT * FROM Predmet ORDER BY naziv")->fetchAll();
+$vsiPredmeti = $conn->query("SELECT * FROM Predmet WHERE LOWER(naziv) <> 'razredna ura' ORDER BY naziv")->fetchAll();
 
 
 // ==============================
@@ -424,9 +424,27 @@ foreach ($oddaje_raw as $od) {
 
 pageStart("Dijak");
 
+$activeStudentTab = $_GET["tab"] ?? "gradiva";
+if (!in_array($activeStudentTab, ["gradiva", "naloge", "predmeti"], true)) {
+    $activeStudentTab = "gradiva";
+}
+
 ?>
 
-<h1>Moja učilnica</h1>
+<div class="admin-header-row">
+    <div>
+        <h1 class="m-0">Moja učilnica</h1>
+        <p class="text-muted text-md mt-1 mb-0">
+            Hiter dostop do šolskih gradiv, oddaje nalog in urejanja vaših vpisanih predmetov.
+        </p>
+    </div>
+
+    <div class="d-flex gap-2">
+        <button type="button" class="btn btn-white small" id="toggle-all-student-tabs-btn" onclick="toggleStudentPrikaziVse()">
+            Prikaži vse zavihke
+        </button>
+    </div>
+</div>
 
 
 <?php
@@ -440,7 +458,7 @@ if ($potrditev):
         <?= e($potrditev["sporocilo"]) ?>
     </strong>
 
-    <div style="margin-top: 10px; display: flex; gap: 10px;">
+    <div class="d-flex gap-2 mt-2">
         <form method="POST">
             <input type="hidden" name="action" value="potrdi_povoz">
             <button class="btn blue">Da, povozi</button>
@@ -456,246 +474,209 @@ if ($potrditev):
 
 <?php endif; ?>
 
+<!-- ZAVIHKI DIJAŠKE UČILNICE -->
+<nav class="admin-tab-nav" id="student-tab-nav">
+    <button type="button" class="admin-tab-btn <?= ($activeStudentTab === 'gradiva') ? 'active' : '' ?>" data-tab="tab-gradiva" onclick="preklopiStudentZavihek('gradiva')">
+        Gradiva
+        <span class="tab-badge"><?= count($gradiva) ?></span>
+    </button>
 
-<div class="admin-grid">
+    <button type="button" class="admin-tab-btn <?= ($activeStudentTab === 'naloge') ? 'active' : '' ?>" data-tab="tab-naloge" onclick="preklopiStudentZavihek('naloge')">
+        Naloge in oddaja
+        <span class="tab-badge"><?= count($naloge) ?></span>
+    </button>
+
+    <button type="button" class="admin-tab-btn <?= ($activeStudentTab === 'predmeti') ? 'active' : '' ?>" data-tab="tab-predmeti" onclick="preklopiStudentZavihek('predmeti')">
+        Moji predmeti
+        <span class="tab-badge"><?= count($mojiPredmeti) ?></span>
+    </button>
+</nav>
 
 
-<!-- PREDMETI -->
+<!-- 1. ZAVIHEK: GRADIVA -->
+<div id="tab-gradiva" class="tab-content <?= ($activeStudentTab === 'gradiva') ? 'active' : '' ?>">
+    <section class="panel full">
+        <h2>Gradiva za vaše predmete</h2>
+        <p class="panel-subtitle">
+            Učna gradiva in datoteke, ki so jih objavili profesorji za vaše vpisane predmete.
+        </p>
 
-<section class="panel">
+        <?php foreach ($gradiva as $g): ?>
+            <div class="list-row">
+                <div>
+                    <strong><?= e($g["naslov"]) ?></strong>
+                    <div class="text-muted text-xs mt-1">
+                        <span><?= e($g["predmet"]) ?></span>
+                        <?php if (!empty($g["oddelki_imena"])): ?>
+                            &bull; <span>Razred: <?= e($g["oddelki_imena"]) ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <?php if (!empty($g["opis"])): ?>
+                        <p class="mb-0 mt-1 text-sm"><?= e($g["opis"]) ?></p>
+                    <?php endif; ?>
+                </div>
 
-<h2>Moji predmeti</h2>
-<p style="font-size: 13px; color: var(--muted); margin-top: -6px; margin-bottom: 14px;">
-    Tukaj lahko določate in urejate seznam predmetov, ki jih obiskujete.
-</p>
+                <a href="<?= e($g["datoteka_pot"]) ?>" target="_blank" class="btn blue small">
+                    Odpri gradivo
+                </a>
+            </div>
+        <?php endforeach; ?>
 
-<?php if (empty($mojiPredmeti)): ?>
+        <?php if (!$gradiva): ?>
+            <p class="text-muted">Trenutno ni objavljenih gradiv.</p>
+        <?php endif; ?>
+    </section>
+</div>
 
-    <p style="color: var(--muted);">Trenutno nimate izbranega nobenega predmeta. Izberite predmete spodaj.</p>
 
-<?php else: ?>
-
-    <?php foreach ($mojiPredmeti as $p): ?>
-
-    <div class="list-row" style="display: flex; justify-content: space-between; align-items: center;">
-
-        <div>
-            <strong><?= e($p["naziv"]) ?></strong>
-            <?php if (!empty($p["opis"])): ?>
-                <br><small class="muted"><?= e($p["opis"]) ?></small>
-            <?php endif; ?>
+<!-- 2. ZAVIHEK: NALOGE -->
+<div id="tab-naloge" class="tab-content <?= ($activeStudentTab === 'naloge') ? 'active' : '' ?>">
+    <section class="panel full">
+        <div class="panel-header-actions">
+            <div>
+                <h2 class="m-0">Naloge</h2>
+                <p class="panel-subtitle mt-1 mb-0">Hitra oddaja nalog za vaše predmete.</p>
+            </div>
+            <a href="naloge.php" class="btn blue small">
+                → Odpri celoten zavihek Naloge (po predmetih)
+            </a>
         </div>
 
-        <form method="POST" style="margin: 0;">
-            <input type="hidden" name="action" value="odstrani_predmet">
-            <input type="hidden" name="predmet_id" value="<?= (int)$p["id_predmet"] ?>">
-            <button class="btn red small" onclick="return confirm('Ali res želite odstraniti ta predmet s svojega seznama?')" style="padding: 4px 8px; font-size: 11px;">
-                Odstrani
-            </button>
+        <?php foreach ($naloge as $n): ?>
+            <?php
+            $oddaja = $oddajeMap[$n["id_naloga"]] ?? null;
+            $jeOddana = $oddaja !== null;
+            ?>
+            <div class="task">
+                <h3><?= e($n["naslov"]) ?></h3>
+                <p><strong>Predmet:</strong> <?= e($n["predmet"]) ?></p>
+                <p><strong>Navodila:</strong> <?= e($n["navodila"]) ?></p>
+                <p><strong>Rok:</strong> <?= e($n["rok_oddaje"]) ?></p>
+                <p>
+                    <strong>Stanje:</strong>
+                    <?php if ($jeOddana): ?>
+                        <span class="badge-ok">Oddano (<?= e($oddaja["oddano_ob"]) ?>)</span>
+                        <?php if ($oddaja["ocena"] !== null): ?>
+                            — Ocena: <strong><?= e($oddaja["ocena"]) ?></strong>
+                            <?php if ($oddaja["komentar_ucitelja"]): ?>
+                                (<?= e($oddaja["komentar_ucitelja"]) ?>)
+                            <?php endif; ?>
+                        <?php endif; ?>
+                    <?php else: ?>
+                        <span class="badge-warn">Ni oddano</span>
+                    <?php endif; ?>
+                </p>
+
+                <?php if (!$potrditev || (int)$potrditev["naloga_id"] !== (int)$n["id_naloga"]): ?>
+                    <form method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="action" value="oddaj_nalogo">
+                        <input type="hidden" name="naloga_id" value="<?= $n["id_naloga"] ?>">
+                        <input type="file" name="datoteka" required>
+                        <input type="text" name="komentar" placeholder="Komentar ob oddaji">
+                        <button class="btn blue">
+                            <?= $jeOddana ? "Oddaj ponovno" : "Oddaj nalogo" ?>
+                        </button>
+                    </form>
+                <?php endif; ?>
+            </div>
+        <?php endforeach; ?>
+
+        <?php if (!$naloge): ?>
+            <p class="text-muted">Trenutno ni nalog.</p>
+        <?php endif; ?>
+    </section>
+</div>
+
+
+<!-- 3. ZAVIHEK: MOJI PREDMETI -->
+<div id="tab-predmeti" class="tab-content <?= ($activeStudentTab === 'predmeti') ? 'active' : '' ?>">
+    <section class="panel full">
+        <h2>Moji predmeti</h2>
+        <p class="panel-subtitle">
+            Tukaj lahko določate in urejate seznam predmetov, ki jih obiskujete.
+        </p>
+
+        <form method="POST" class="enrollment-top-bar mb-4">
+            <input type="hidden" name="action" value="dodaj_predmet">
+
+            <div class="enrollment-top-field">
+                <label class="enrollment-label" for="student_add_predmet">Dodaj predmet na svoj seznam</label>
+                <select id="student_add_predmet" name="predmet_id" required class="enrollment-select">
+                    <option value="">-- Izberite predmet za vpis --</option>
+                    <?php foreach ($vsiPredmeti as $vp): ?>
+                        <?php if (!in_array((int)$vp["id_predmet"], $mojiPredmetiIds, true)): ?>
+                            <option value="<?= (int)$vp["id_predmet"] ?>"><?= e($vp["naziv"]) ?></option>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div class="enrollment-top-btn-wrap">
+                <button class="btn blue btn-enroll-inline">+ Dodaj predmet</button>
+            </div>
         </form>
 
-    </div>
+        <?php if (empty($mojiPredmeti)): ?>
+            <p class="text-muted">Trenutno nimate izbranega nobenega predmeta. Izberite predmete zgoraj.</p>
+        <?php else: ?>
+            <?php foreach ($mojiPredmeti as $p): ?>
+                <div class="list-row">
+                    <div>
+                        <strong><?= e($p["naziv"]) ?></strong>
+                        <?php if (!empty($p["opis"])): ?>
+                            <br><small class="text-muted"><?= e($p["opis"]) ?></small>
+                        <?php endif; ?>
+                    </div>
 
-    <?php endforeach; ?>
-
-<?php endif; ?>
-
-<!-- OBRAZEC ZA DODAJANJE PREDMETA -->
-<form method="POST" style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
-    <input type="hidden" name="action" value="dodaj_predmet">
-
-    <select name="predmet_id" required style="flex: 1; min-width: 200px; padding: 7px 10px; border-radius: 6px; border: 1px solid var(--border);">
-        <option value="">-- Izberite predmet za vpis --</option>
-        <?php foreach ($vsiPredmeti as $vp): ?>
-            <?php if (!in_array((int)$vp["id_predmet"], $mojiPredmetiIds, true)): ?>
-                <option value="<?= (int)$vp["id_predmet"] ?>"><?= e($vp["naziv"]) ?></option>
-            <?php endif; ?>
-        <?php endforeach; ?>
-    </select>
-
-    <button class="btn blue small" style="white-space: nowrap;">+ Dodaj predmet</button>
-</form>
-
-</section>
-
-
-<!-- GRADIVA -->
-
-<section class="panel">
-
-<h2>Gradiva</h2>
-
-
-<?php foreach ($gradiva as $g): ?>
-
-<div class="list-row">
-
-<div>
-
-<strong>
-<?= e($g["naslov"]) ?>
-</strong>
-
-<div style="font-size: 12px; color: var(--muted); margin-top: 2px;">
-    <span><?= e($g["predmet"]) ?></span>
-    <?php if (!empty($g["oddelki_imena"])): ?>
-        &bull; <span>Razred: <?= e($g["oddelki_imena"]) ?></span>
-    <?php endif; ?>
-</div>
-
-<p>
-<?= e($g["opis"]) ?>
-</p>
-
-</div>
-
-
-<a
-    href="<?= e($g["datoteka_pot"]) ?>"
-    target="_blank"
-    class="btn small"
->
-    Odpri
-</a>
-
-</div>
-
-<?php endforeach; ?>
-
-
-<?php if (!$gradiva): ?>
-
-<p>
-Ni gradiv.
-</p>
-
-<?php endif; ?>
-
-</section>
-
-
-<!-- NALOGE -->
-
-<section class="panel full">
-
-<h2>Naloge</h2>
-
-
-<?php foreach ($naloge as $n): ?>
-
-<?php
-    $oddaja = $oddajeMap[$n["id_naloga"]] ?? null;
-    $jeOddana = $oddaja !== null;
-?>
-
-<div class="task">
-
-<h3>
-<?= e($n["naslov"]) ?>
-</h3>
-
-<p>
-
-<strong>
-Predmet:
-</strong>
-
-<?= e($n["predmet"]) ?>
-
-</p>
-
-
-<p>
-
-<strong>
-Navodila:
-</strong>
-
-<?= e($n["navodila"]) ?>
-
-</p>
-
-
-<p>
-
-<strong>
-Rok:
-</strong>
-
-<?= e($n["rok_oddaje"]) ?>
-
-</p>
-
-
-<p>
-<strong>Stanje:</strong>
-<?php if ($jeOddana): ?>
-    <span class="badge-ok">Oddano (<?= e($oddaja["oddano_ob"]) ?>)</span>
-    <?php if ($oddaja["ocena"] !== null): ?>
-        — Ocena: <strong><?= e($oddaja["ocena"]) ?></strong>
-        <?php if ($oddaja["komentar_ucitelja"]): ?>
-            (<?= e($oddaja["komentar_ucitelja"]) ?>)
+                    <form method="POST" class="m-0">
+                        <input type="hidden" name="action" value="odstrani_predmet">
+                        <input type="hidden" name="predmet_id" value="<?= (int)$p["id_predmet"] ?>">
+                        <button class="gumb-odstrani" onclick="return confirm('Ali res želite odstraniti ta predmet s svojega seznama?')">
+                            Odstrani
+                        </button>
+                    </form>
+                </div>
+            <?php endforeach; ?>
         <?php endif; ?>
-    <?php endif; ?>
-<?php else: ?>
-    <span class="badge-warn">Ni oddano</span>
-<?php endif; ?>
-</p>
-
-
-<?php if (!$potrditev || (int)$potrditev["naloga_id"] !== (int)$n["id_naloga"]): ?>
-<form
-    method="POST"
-    enctype="multipart/form-data"
->
-
-<input type="hidden"
-       name="action"
-       value="oddaj_nalogo">
-
-
-<input type="hidden"
-       name="naloga_id"
-       value="<?= $n["id_naloga"] ?>">
-
-
-<input
-    type="file"
-    name="datoteka"
-    required
->
-
-
-<input
-    type="text"
-    name="komentar"
-    placeholder="Komentar"
->
-
-
-<button class="btn blue">
-<?= $jeOddana ? "Oddaj ponovno" : "Oddaj nalogo" ?>
-</button>
-
-</form>
-<?php endif; ?>
-
+    </section>
 </div>
 
-<?php endforeach; ?>
+<script>
+let vsiStudentZavihki = false;
 
+function preklopiStudentZavihek(tabName) {
+    vsiStudentZavihki = false;
+    const toggleBtn = document.getElementById('toggle-all-student-tabs-btn');
+    if (toggleBtn) toggleBtn.textContent = 'Prikaži vse zavihke';
 
-<?php if (!$naloge): ?>
+    document.querySelectorAll('#student-tab-nav .admin-tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.getAttribute('data-tab') === 'tab-' + tabName);
+    });
 
-<p>
-Trenutno ni nalog.
-</p>
+    document.querySelectorAll('.tab-content').forEach(content => {
+        const isTarget = (content.id === 'tab-' + tabName);
+        content.classList.toggle('active', isTarget);
+        content.style.display = isTarget ? 'block' : 'none';
+    });
 
-<?php endif; ?>
+    history.replaceState(null, null, '?tab=' + encodeURIComponent(tabName));
+}
 
-</section>
+function toggleStudentPrikaziVse() {
+    vsiStudentZavihki = !vsiStudentZavihki;
+    const btn = document.getElementById('toggle-all-student-tabs-btn');
 
-</div>
-
+    if (vsiStudentZavihki) {
+        if (btn) btn.textContent = 'Pogled z zavihki';
+        document.querySelectorAll('.tab-content').forEach(c => {
+            c.style.display = 'block';
+        });
+        document.querySelectorAll('#student-tab-nav .admin-tab-btn').forEach(b => b.classList.remove('active'));
+    } else {
+        if (btn) btn.textContent = 'Prikaži vse zavihke';
+        preklopiStudentZavihek('gradiva');
+    }
+}
+</script>
 
 <?php pageEnd(); ?>

@@ -1,21 +1,21 @@
 <?php
 
-require_once "functions.php";
+require_once "funkcije.php";
 
 requireLogin();
 
 $user = getUser();
 
 if ($user["vloga"] === "admin") {
-    redirect("admin.php");
+    redirect("administrator.php");
 }
 
 if ($user["vloga"] === "ucitelj") {
-    redirect("teacher.php");
+    redirect("ucitelj.php");
 }
 
 if ($user["vloga"] === "dijak") {
-    redirect("student.php");
+    redirect("dijak.php");
 }
 
 ?>
