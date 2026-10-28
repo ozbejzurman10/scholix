@@ -1,0 +1,77 @@
+services:
+  spletna-stran:
+    build: .
+    container_name: sola_spletna_stran
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      DB_HOST: baza
+      DB_PORT: "3306"
+      DB_NAME: ${MYSQL_DATABASE:-sola}
+      DB_USER: root
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Nastavite MYSQL_ROOT_PASSWORD v datoteki .env}
+    volumes:
+      # Izvorna koda (sprotni razvoj); naloženi dokumenti so v trajnem volumnu
+      - .:/var/www/html
+      - nalozeno:/var/www/html/uploads
+    depends_on:
+      baza:
+        condition: service_healthy
+      inicializacija:
+        condition: service_completed_successfully
+
+  baza:
+    image: mysql:8.4
+    container_name: sola_mysql
+    restart: unless-stopped
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Nastavite MYSQL_ROOT_PASSWORD v datoteki .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sola}
+    # Vrata MySQL so le na lokalnem računalniku (127.0.0.1) za razvoj; drugi vsebniki uporabljajo baza:3306
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - podatki_baze:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  # Enkratna inicializacija: ustvari tabele in uvozi testne podatke SAMO, če baza še nima tabele Uporabnik.
+  # Obstoječih podatkov nikoli ne spreminja in ne briše.
+  inicializacija:
+    image: mysql:8.4
+    container_name: sola_inicializacija
+    restart: "no"
+    environment:
+      MYSQL_PWD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sola}
+    volumes:
+      - ./Baza_Scholix.sql:/sql/Baza_Scholix.sql:ro
+      - ./Testni_podatki.sql:/sql/Testni_podatki.sql:ro
+      - ./docker/inicializacija.sh:/inicializacija.sh:ro
+    entrypoint: ["sh", "/inicializacija.sh"]
+    depends_on:
+      baza:
+        condition: service_healthy
+
+  phpmyadmin:
+    image: phpmyadmin:5
+    container_name: sola_phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOST: baza
+      PMA_PORT: 3306
+    depends_on:
+      baza:
+        condition: service_healthy
+
+volumes:
+  podatki_baze:
+  nalozeno:

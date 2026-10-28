@@ -89,6 +89,17 @@ function ensureUploadDirectory($directory)
 }
 
 
+// Sporočilo o napaki, primerno za uporabnika (podrobnosti baze se zapišejo le v dnevnik).
+function userErrorMessage(Throwable $e)
+{
+    if ($e instanceof PDOException) {
+        error_log("Scholix: " . $e->getMessage());
+        return "prišlo je do napake pri delu z bazo.";
+    }
+    return $e->getMessage();
+}
+
+
 function flash($message)
 {
     $_SESSION["message"] = $message;

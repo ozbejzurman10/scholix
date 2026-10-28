@@ -449,7 +449,7 @@ if (($_SERVER["REQUEST_METHOD"] ?? "") === "POST") {
 
     } catch (Throwable $e) {
 
-        flash("Napaka: " . $e->getMessage());
+        flash("Napaka: " . userErrorMessage($e));
     }
 
     $redirectTab = "gradiva";

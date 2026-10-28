@@ -1,20 +1,51 @@
 <?php
 
-$host = "localhost";
-$database = "Scholix";
-$username = "root";
-$password = "";
+/**
+ * Povezava z bazo (PDO). Nastavitve se preberejo iz spremenljivk okolja
+ * (glej .env.example / compose.yaml). Znotraj Dockerja je gostitelj ime storitve "baza".
+ */
+
+function scholixEnv($ime, $privzeto)
+{
+    $v = getenv($ime);
+    return ($v === false || $v === "") ? $privzeto : $v;
+}
+
+$host = scholixEnv("DB_HOST", "baza");
+$port = scholixEnv("DB_PORT", "3306");
+$dbname = scholixEnv("DB_NAME", "sola");
+$username = scholixEnv("DB_USER", "root");
+$password = scholixEnv("DB_PASSWORD", "");
 
 try {
-    $conn = new PDO(
-        "mysql:host=$host;dbname=$database;charset=utf8mb4",
-        $username,
-        $password
-    );
+    $conn = null;
+    $zadnjaNapaka = null;
 
-    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-    $conn->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    // MySQL je lahko tik po zagonu še nedosegljiv – nekajkrat poskusi znova.
+    for ($poskus = 1; $poskus <= 10; $poskus++) {
+        try {
+            $conn = new PDO(
+                "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4",
+                $username,
+                $password,
+                [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_TIMEOUT => 5,
+                ]
+            );
+            break;
+        } catch (PDOException $ex) {
+            $zadnjaNapaka = $ex;
+            sleep(1);
+        }
+    }
 
+    if (!$conn) {
+        throw $zadnjaNapaka;
+    }
+
+    // Tabele ustvari inicializacijska storitev (Baza_Scholix.sql); spodaj so le varne, ponovljive dopolnitve.
     $conn->exec("
         CREATE TABLE IF NOT EXISTS Pisno_Ocenjevanje (
             id_ocenjevanje INT AUTO_INCREMENT PRIMARY KEY,
@@ -213,7 +244,9 @@ try {
     }
 
 } catch (PDOException $e) {
-    die("Napaka pri povezavi z bazo: " . $e->getMessage());
+    error_log("Scholix: napaka pri povezavi z bazo: " . $e->getMessage());
+    http_response_code(500);
+    die("Napaka pri povezavi z bazo. Poskusite znova čez nekaj trenutkov.");
 }
 
 ?>

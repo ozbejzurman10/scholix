@@ -1,5 +1,5 @@
 SET NAMES utf8mb4;
-USE scholix;
+USE sola;
 
 SET FOREIGN_KEY_CHECKS = 0;
 TRUNCATE TABLE Dan_Brez_Pouka;
@@ -16,7 +16,7 @@ TRUNCATE TABLE Ucitelj_Predmet;
 TRUNCATE TABLE Predmet;
 TRUNCATE TABLE Uporabnik;
 TRUNCATE TABLE Oddelek;
-SET FOREIGN_KEY_CHECKS = 1;
+-- (kontrola tujih kljucev se vklopi sele na koncu: Oddelek.razrednik_id kaze na Uporabnik)
 
 -- Oddelki
 INSERT INTO Oddelek (id_oddelek, ime, letnik, program, razrednik_id) VALUES
@@ -3242,3 +3242,4 @@ INSERT INTO Urnik (id_urnik, predmet_id, ucitelj_id, dan_v_tednu, ura, ucilnica,
 (975, 3, 5, 'Petek', 7, 'E03', 23),
 (976, 103, 44, 'Petek', 8, 'BE05', 23);
 
+SET FOREIGN_KEY_CHECKS = 1;

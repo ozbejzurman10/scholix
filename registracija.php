@@ -75,7 +75,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
         redirect("prijava.php");
 
     } catch (Throwable $e) {
-        $error = $e->getMessage();
+        $error = userErrorMessage($e);
     }
 }
 
